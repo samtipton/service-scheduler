@@ -14,11 +14,11 @@ class Service(models.Model):
         return f"{self.name} on day {self.day_of_week} at {self.start_time}"
 
 class Task(models.Model):
-    # Django will automatically add an 'id' primary key if not specified
+    id = models.CharField(primary_key=True, max_length=64, unique=True)  # Using unique constraint for now
     name = models.CharField(max_length=50)
-    task_id = models.CharField(max_length=64, unique=True)  # Using unique constraint for now
     description = models.TextField(blank=True)
-    service_id = models.ForeignKey(Service, on_delete=models.RESTRICT)
+    # TODO rename 'service'
+    service = models.ForeignKey(Service, on_delete=models.RESTRICT)
     excludes = models.ManyToManyField('self', symmetrical=True, blank=True)
 
     SUNDAY = '0'
@@ -49,11 +49,11 @@ class Task(models.Model):
     #     unique_together = ['task_id', 'group']
 
     def __str__(self):
-        return f"{self.name} ({self.task_id}\n{self.description})"
+        return f"{self.name} ({self.task_id}) - {self.description})"
 
 class Assignment(models.Model):
     user = models.ForeignKey(get_user_model(), on_delete=models.RESTRICT)
-    task_id = models.ForeignKey(Task, on_delete=models.RESTRICT)
+    task = models.ForeignKey(Task, on_delete=models.RESTRICT)
     assigned_at = models.DateTimeField(db_index=True)  # Indexing for faster range queries
 
     class Meta:
@@ -73,7 +73,7 @@ class TaskPreferenceManager(models.Manager):
 
 class TaskPreference(models.Model):
     user = models.ForeignKey(get_user_model(), on_delete=models.CASCADE)
-    task_id = models.ForeignKey(Task, on_delete=models.RESTRICT)
+    task = models.ForeignKey(Task, on_delete=models.RESTRICT)
     value = models.FloatField(validators=[MinValueValidator(0.0)])
     updated_at = models.DateField(auto_now_add=True)
 
@@ -81,5 +81,7 @@ class TaskPreference(models.Model):
         return f"{self.user} -> {self.task_id} ({self.value})" 
 
     class Meta:
-        unique_together = ['user', 'task_id']
+        unique_together = ['user', 'task']
         ordering = ['-updated_at']
+
+    objects = TaskPreferenceManager()
