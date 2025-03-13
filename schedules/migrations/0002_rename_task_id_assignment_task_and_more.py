@@ -6,32 +6,34 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('schedules', '0001_initial'),
+        ("schedules", "0001_initial"),
     ]
 
     operations = [
         migrations.RenameField(
-            model_name='assignment',
-            old_name='task_id',
-            new_name='task',
+            model_name="assignment",
+            old_name="task_id",
+            new_name="task",
         ),
         migrations.RenameField(
-            model_name='task',
-            old_name='service_id',
-            new_name='service',
+            model_name="task",
+            old_name="service_id",
+            new_name="service",
         ),
         migrations.RenameField(
-            model_name='taskpreference',
-            old_name='task_id',
-            new_name='task',
+            model_name="taskpreference",
+            old_name="task_id",
+            new_name="task",
         ),
         migrations.RemoveField(
-            model_name='task',
-            name='task_id',
+            model_name="task",
+            name="task_id",
         ),
         migrations.AlterField(
-            model_name='task',
-            name='id',
-            field=models.CharField(max_length=64, primary_key=True, serialize=False, unique=True),
+            model_name="task",
+            name="id",
+            field=models.CharField(
+                max_length=64, primary_key=True, serialize=False, unique=True
+            ),
         ),
     ]

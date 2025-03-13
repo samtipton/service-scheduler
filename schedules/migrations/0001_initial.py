@@ -16,50 +16,133 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='Service',
+            name="Service",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=100)),
-                ('day_of_week', models.IntegerField(blank=True, null=True)),
-                ('start_time', models.TimeField()),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=100)),
+                ("day_of_week", models.IntegerField(blank=True, null=True)),
+                ("start_time", models.TimeField()),
             ],
         ),
         migrations.CreateModel(
-            name='Task',
+            name="Task",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=50)),
-                ('task_id', models.CharField(max_length=64, unique=True)),
-                ('description', models.TextField(blank=True)),
-                ('time_period', models.CharField(choices=[('0', 'Sunday'), ('1', 'Monday'), ('2', 'Tuesday'), ('3', 'Wednesday'), ('4', 'Thursday'), ('5', 'Friday'), ('6', 'Saturday'), ('w', 'Weekly'), ('m', 'Monthly')], max_length=10)),
-                ('excludes', models.ManyToManyField(blank=True, to='schedules.task')),
-                ('service_id', models.ForeignKey(on_delete=django.db.models.deletion.RESTRICT, to='schedules.service')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=50)),
+                ("task_id", models.CharField(max_length=64, unique=True)),
+                ("description", models.TextField(blank=True)),
+                (
+                    "time_period",
+                    models.CharField(
+                        choices=[
+                            ("0", "Sunday"),
+                            ("1", "Monday"),
+                            ("2", "Tuesday"),
+                            ("3", "Wednesday"),
+                            ("4", "Thursday"),
+                            ("5", "Friday"),
+                            ("6", "Saturday"),
+                            ("w", "Weekly"),
+                            ("m", "Monthly"),
+                        ],
+                        max_length=10,
+                    ),
+                ),
+                ("excludes", models.ManyToManyField(blank=True, to="schedules.task")),
+                (
+                    "service_id",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.RESTRICT,
+                        to="schedules.service",
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='Assignment',
+            name="Assignment",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('assigned_at', models.DateTimeField(db_index=True)),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.RESTRICT, to=settings.AUTH_USER_MODEL)),
-                ('task_id', models.ForeignKey(on_delete=django.db.models.deletion.RESTRICT, to='schedules.task')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("assigned_at", models.DateTimeField(db_index=True)),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.RESTRICT,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "task_id",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.RESTRICT,
+                        to="schedules.task",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-assigned_at'],
+                "ordering": ["-assigned_at"],
             },
         ),
         migrations.CreateModel(
-            name='TaskPreference',
+            name="TaskPreference",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('value', models.FloatField(validators=[django.core.validators.MinValueValidator(0.0)])),
-                ('updated_at', models.DateField(auto_now_add=True)),
-                ('task_id', models.ForeignKey(on_delete=django.db.models.deletion.RESTRICT, to='schedules.task')),
-                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "value",
+                    models.FloatField(
+                        validators=[django.core.validators.MinValueValidator(0.0)]
+                    ),
+                ),
+                ("updated_at", models.DateField(auto_now_add=True)),
+                (
+                    "task_id",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.RESTRICT,
+                        to="schedules.task",
+                    ),
+                ),
+                (
+                    "user",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-updated_at'],
-                'unique_together': {('user', 'task_id')},
+                "ordering": ["-updated_at"],
+                "unique_together": {("user", "task_id")},
             },
         ),
     ]
