@@ -4,7 +4,7 @@ from django.db import IntegrityError
 from django.forms import ValidationError
 from django.test import TestCase
 from django.utils import timezone
-from schedules.models import Service, Task, TaskPreference
+from schedules.models import Service, Task, TaskPreference, Assignment
 from users.models import User
 
 
@@ -30,6 +30,143 @@ class ServiceTestCase(TestCase):
                 name="Test Service", day_of_week=7, start_time=time(9, 0)
             )
             service.full_clean()
+
+
+class TaskTestCase(TestCase):
+    def setUp(self):
+        self.service = Service.objects.create(
+            name="Test Service", day_of_week=0, start_time=time(9, 0)
+        )
+
+        self.task1 = Task.objects.create(
+            name="Test Task 1",
+            id="test_task_id_1",
+            description="Test Description",
+            service=self.service,
+            time_period=Task.SUNDAY,
+        )
+
+        self.task2 = Task.objects.create(
+            name="Test Task 2",
+            id="test_task_id_2",
+            description="Test Description",
+            service=self.service,
+            time_period=Task.SUNDAY,
+        )
+
+    def test_filter_by_id(self):
+        self.assertEqual(Task.objects.filter(pk="test_task_id_1").first(), self.task1)
+        self.assertEqual(Task.objects.filter(pk="test_task_id_2").first(), self.task2)
+
+    def test_primary_key_is_name(self):
+        self.assertEqual(self.task1.pk, "test_task_id_1")
+        self.assertEqual(self.task2.pk, "test_task_id_2")
+
+    def test_time_period_choices(self):
+        self.assertEqual(Task.TIME_PERIOD_CHOICES[Task.SUNDAY], "Sunday")
+        self.assertEqual(Task.TIME_PERIOD_CHOICES[Task.MONDAY], "Monday")
+        self.assertEqual(Task.TIME_PERIOD_CHOICES[Task.TUESDAY], "Tuesday")
+        self.assertEqual(Task.TIME_PERIOD_CHOICES[Task.WEDNESDAY], "Wednesday")
+        self.assertEqual(Task.TIME_PERIOD_CHOICES[Task.THURSDAY], "Thursday")
+        self.assertEqual(Task.TIME_PERIOD_CHOICES[Task.FRIDAY], "Friday")
+        self.assertEqual(Task.TIME_PERIOD_CHOICES[Task.SATURDAY], "Saturday")
+        self.assertEqual(Task.TIME_PERIOD_CHOICES[Task.WEEKLY], "Weekly")
+        self.assertEqual(Task.TIME_PERIOD_CHOICES[Task.MONTHLY], "Monthly")
+
+    def test_excludes_self_on_save(self):
+        self.assertEqual(self.task1.excludes.count(), 1)
+        self.assertEqual(self.task1.excludes.first(), self.task1)
+        self.assertTrue(self.task1.is_excluded(self.task1))
+
+    def test_excludes_other(self):
+        self.task1.excludes.add(self.task2)
+
+        self.assertTrue(self.task1.is_excluded(self.task2))
+
+    def test_manager_excludes_other(self):
+        self.task1.excludes.add(self.task2)
+
+        self.assertTrue(self.task1.is_excluded(self.task2))
+        self.assertTrue(Task.objects.is_excluded(self.task1.id, self.task2.id))
+        self.assertTrue(Task.objects.is_excluded(self.task2.id, self.task1.id))
+
+    def test_unique_together(self):
+        with self.assertRaises(IntegrityError):
+            Task.objects.create(
+                name="Test Task", id="test_task_id", service=self.service
+            )
+            Task.objects.create(
+                name="Test Task", id="test_task_id", service=self.service
+            )
+
+    def test_str(self):
+        self.assertEqual(
+            str(self.task1), "Test Task 1 (test_task_id_1) - Test Description"
+        )
+
+
+class AssignmentTestCase(TestCase):
+    def setUp(self):
+        self.service = Service.objects.create(
+            name="Test Service", day_of_week=0, start_time=time(9, 0)
+        )
+
+        self.task1 = Task.objects.create(
+            name="Test Task 1",
+            id="test_task_id_1",
+            description="Test Description",
+            service=self.service,
+        )
+
+        self.task2 = Task.objects.create(
+            name="Test Task 2",
+            id="test_task_id_2",
+            description="Test Description",
+            service=self.service,
+        )
+
+        self.user = User.objects.create_user(
+            username="testuser",
+            password="testpassword",
+            first_name="Test",
+            last_name="User",
+        )
+
+    def test_assignment_creation(self):
+        assignment = Assignment.objects.create(
+            user=self.user,
+            task=self.task1,
+            assigned_at=timezone.now(),
+        )
+        self.assertEqual(assignment.user, self.user)
+        self.assertIsNotNone(assignment.assigned_at)
+
+    def test_ordering(self):
+        assignment1 = Assignment.objects.create(
+            user=self.user,
+            task=self.task1,
+            assigned_at=timezone.now(),
+        )
+        assignment2 = Assignment.objects.create(
+            user=self.user,
+            task=self.task2,
+            assigned_at=timezone.now() + datetime.timedelta(hours=1),
+        )
+        assignments = Assignment.objects.all()
+        self.assertEqual(assignments[0], assignment2)
+        self.assertEqual(assignments[1], assignment1)
+
+    def test_str(self):
+        now = timezone.now()
+        assignment = Assignment.objects.create(
+            user=self.user,
+            task=self.task1,
+            assigned_at=now,
+        )
+        self.assertEqual(
+            str(assignment),
+            f"{now.strftime('%Y-%m-%d %H:%M')}-test_task_id_1 -> User, Test",
+        )
 
 
 class TaskPreferenceTestCase(TestCase):

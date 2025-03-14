@@ -17,6 +17,11 @@ class Service(models.Model):
         return f"{self.name} on day {self.day_of_week} at {self.start_time}"
 
 
+class TaskManager(models.Manager):
+    def is_excluded(self, task_id1, task_id2):
+        return self.filter(id=task_id1, excludes__id=task_id2).exists()
+
+
 class Task(models.Model):
     id = models.CharField(primary_key=True, max_length=64, unique=True)
     name = models.CharField(max_length=50)
@@ -51,8 +56,17 @@ class Task(models.Model):
     # class Meta:
     #     unique_together = ['task_id', 'group']
 
+    objects = TaskManager()
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.excludes.add(self)
+
+    def is_excluded(self, task):
+        return self.excludes.filter(id=task.id).exists()
+
     def __str__(self):
-        return f"{self.name} ({self.task_id}) - {self.description})"
+        return f"{self.name} ({self.id}) - {self.description}"
 
 
 class Assignment(models.Model):
