@@ -27,6 +27,7 @@ class CustomUserManager(BaseUserManager):
             email=email,
             first_name=first_name.capitalize(),
             last_name=last_name.capitalize(),
+            username=f"{first_name.capitalize()} {last_name.capitalize()}",
             **extra_fields,
         )
         user.password = make_password(password)
