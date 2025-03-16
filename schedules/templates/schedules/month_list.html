@@ -1,0 +1,17 @@
+{% block content %}
+<h1>Schedule</h1>
+
+{% if schedule_year_month_list %}
+    <ul>
+    {% for year_month in schedule_year_month_list %}
+        <li>
+            <a href="{% url 'schedules:month_view' year=year_month.year month=year_month.month %}">
+                {{ year_month.year }}-{{ year_month.month }}
+            </a>
+        </li>
+    {% endfor %}
+    </ul>
+{% else %}
+    <p>No schedules are available.</p>
+{% endif %}
+{% endblock %}
