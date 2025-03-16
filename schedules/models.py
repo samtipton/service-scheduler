@@ -66,7 +66,7 @@ class Task(models.Model):
         return self.excludes.filter(id=task.id).exists()
 
     def __str__(self):
-        return f"{self.name} ({self.id}) - {self.description}"
+        return f"{self.id}"
 
 
 class Assignment(models.Model):
@@ -98,7 +98,7 @@ class TaskPreference(models.Model):
     updated_at = models.DateField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.user} -> {self.task_id} ({self.value})"
+        return f"{self.task_id}"
 
     class Meta:
         unique_together = ["user", "task"]
