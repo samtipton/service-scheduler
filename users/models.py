@@ -4,6 +4,8 @@ from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.validators import UnicodeUsernameValidator
 
+from django.contrib import admin
+
 
 class CustomUserManager(BaseUserManager):
     use_in_migrations = True
@@ -88,6 +90,14 @@ class User(AbstractUser):
             self.username = (
                 f"{self.first_name.capitalize()} {self.last_name.capitalize()}"
             )
+
+    @admin.display(description="Lifetime Assignments", ordering="assignment_count")
+    def assignment_count(self):
+        """
+        Count the number of assignments for this user.
+        Uses a reverse relationship to avoid circular imports.
+        """
+        return self.assignment_set.count()
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.email})"
