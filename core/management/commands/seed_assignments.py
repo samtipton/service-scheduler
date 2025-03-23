@@ -39,29 +39,6 @@ class Command(BaseCommand):
         self.seed_assignments(json_path)
         self.stdout.write(self.style.SUCCESS("Done."))
 
-    def get_earliest_service_date(self, year, month, week_index, service_days):
-        """
-        Get the earliest service date for a given week and service days.
-        """
-        zero_based_index = week_index - 1
-        cal = calendar.monthcalendar(year, month)
-        week = cal[zero_based_index]
-
-        # If the week has no service days, move to the next week
-        if not any(cal[0][i] for i in service_days):
-            zero_based_index += 1
-
-        week = cal[zero_based_index]
-        for i, day in enumerate(week):
-            if day != 0 and i in service_days:
-                return datetime(year, month, day, tzinfo=timezone.utc)
-        self.stdout.write(
-            self.style.WARNING(
-                f"No service days found in week {week_index} of {year}-{month} {week}"
-            )
-        )
-        return None
-
     def seed_assignments(self, json_path):
         with open(json_path, "r") as f:
             assignments_data = json.load(f)

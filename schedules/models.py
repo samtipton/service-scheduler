@@ -69,6 +69,10 @@ class Task(models.Model):
     #     unique_together = ['task_id', 'group']
 
     objects = TaskManager()
+    order = models.IntegerField(default=0, help_text="Used for ordering tasks")
+
+    class Meta:
+        ordering = ["order", "id"]
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)

@@ -17,11 +17,12 @@ class TaskExcludesInline(admin.TabularInline):
 
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "service")
+    list_display = ("id", "name", "service", "order")
     list_filter = ("service",)
     search_fields = ("id", "name", "service__name")
 
-    fieldsets = ((None, {"fields": ("id", "name", "service")}),)
+    ordering = ("order", "id")
+    fieldsets = ((None, {"fields": ("id", "name", "service", "order")}),)
 
     inlines = (TaskExcludesInline,)
 
