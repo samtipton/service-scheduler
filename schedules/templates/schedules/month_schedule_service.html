@@ -1,0 +1,25 @@
+{% load schedule_tags %}
+
+<tbody>
+    {% for task in service_tasks %}
+        <tr>
+            <td>{{ task.name }}</td>
+            {% for week in service_weeks %}
+                {% get_service_day week service_days service.day_of_week as day %}
+                {% if day %}
+                    {% with assignment_key=year|addstr:"-"|addstr:month|addstr:"-"|addstr:day|addstr:"-"|addstr:task.id %}
+                        {% if service_assignments|get_item:service.name|get_item:assignment_key %}
+                            {% with user=service_assignments|get_item:service.name|get_item:assignment_key %}
+                            <td class="empty"></td>
+                            {% include "schedules/assignment_cell.html" with assignment_key=assignment_key %}
+                            {% endwith %}
+                        {% endif %}
+                    {% endwith %} 
+                {% else %}
+                    <td class="empty"></td>
+                    <td class="empty-duty-cell"></td>
+                {% endif %}
+            {%endfor %}
+        </tr>
+    {% endfor %}
+</tbody>

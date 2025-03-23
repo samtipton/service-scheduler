@@ -13,6 +13,17 @@ class Service(models.Model):
     # TODO add groups
     # group = models.ForeignKey(Group, on_delete=models.RESTRICT)
 
+    class Meta:
+        ordering = [
+            # Put services with None day_of_week at the end
+            models.Case(
+                models.When(day_of_week__isnull=True, then=models.Value(999)),
+                default="day_of_week",
+                output_field=models.IntegerField(),
+            ),
+            "start_time",
+        ]
+
     def __str__(self):
         return f"{self.name} on day {self.day_of_week} at {self.start_time}"
 
@@ -29,6 +40,7 @@ class Task(models.Model):
     service = models.ForeignKey(Service, on_delete=models.RESTRICT)
     excludes = models.ManyToManyField("self", symmetrical=True, blank=True)
 
+    # TODO Do we need time period, or is service relationship enough?
     SUNDAY = "0"
     MONDAY = "1"
     TUESDAY = "2"

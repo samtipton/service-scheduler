@@ -1,0 +1,166 @@
+* {
+    box-sizing: border-box;
+  }
+  
+  table {
+    width: 100%;
+    border: 1px solid black;
+    border-collapse: collapse;
+  }
+  
+  th,
+  td {
+    border: 1px solid black;
+    border-collapse: collapse;
+    width: 15%;
+    font-size: 1.2em;
+    padding: 4px;
+    line-height: 24px;
+  }
+  
+  th.empty,
+  td.empty {
+    width: 2%;
+  }
+  
+  td.empty-duty-cell {
+    background: #eee;
+  }
+  
+  th.service-name {
+    font-size: 1.2em;
+    font-weight: bold;
+    text-align: left;
+  }
+  
+  th.day {
+    font-size: xx-large;
+    font-weight: bold;
+  }
+  
+  td.monthly {
+    width: 2.25%;
+  }
+  
+  td.assignment {
+    font-size: x-large;
+    text-align: center;
+  }
+  
+  .header {
+    width: 100%;
+    text-align: center;
+    border: 1px solid black;
+  }
+  
+  .banner {
+    width: 100%;
+    height: fit-content;
+    text-align: center;
+    padding: 8px;
+    border: 1px solid black;
+    font-weight: bold;
+    font-size: xx-large;
+  }
+  
+  .dark-background {
+    background: lightgray;
+  }
+  
+  .duty-cell {
+    cursor: grab;
+    background: #fff;
+  }
+  
+  .duty-cell.over {
+    border: 3px dotted #666;
+  }
+  
+  input[type="text"] {
+    all: unset;
+    border: none;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+    cursor: text;
+  }
+  
+  input::placeholder {
+    color: #6a6a6a;
+    opacity: 1;
+  }
+  
+  td.duty-cell:has(.search-highlight) {
+    background: lightskyblue;
+  }
+  
+  div.search-highlight {
+    background: lightskyblue;
+  }
+  
+  .mouse-reveal {
+    opacity: 0;
+  }
+  
+  .mouse-reveal:hover {
+    opacity: 0.85;
+  }
+  
+  .overlay {
+    position: fixed;
+    background: #888;
+    display: flex;
+    flex-direction: row;
+    gap: 0.75rem;
+    padding: 1rem;
+    top: 0;
+    left: 0;
+  }
+  
+  .toast {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: small;
+    font-weight: bold;
+    position: absolute;
+    background: #888;
+    padding: 0.75rem 0.75rem;
+    bottom: 24px;
+    left: 50%;
+    color: white;
+    border-radius: 1.1rem;
+    opacity: 0;
+  }
+  
+  .assignment-map {
+    border: 1px solid black;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    max-height: 200px;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+  
+  .hidden {
+    visibility: hidden;
+  }
+  
+  .red-triangle {
+    width: 0;
+    height: 0;
+    border: solid 4px;
+    border-color: transparent transparent red transparent;
+  }
+  .green-triangle {
+    width: 0;
+    height: 0;
+    border: solid 4px;
+    border-color: transparent transparent green transparent;
+  }
+  
+  @media print {
+    @page {
+      size: landscape;
+    }
+  }

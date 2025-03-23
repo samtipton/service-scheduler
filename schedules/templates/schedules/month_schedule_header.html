@@ -1,0 +1,14 @@
+{% load schedule_tags %}
+
+<thead>
+    <th class="service-name">{{ service.name }}</th>
+        {% for week in service_weeks %}
+        {% with day=week|get_item:service.day_of_week %}
+            {% if day %}
+                <th class="empty"></th><th class="day">{{ day }}</th>
+            {% else %}
+                <th class="empty"></th><th class="empty"></th>
+            {% endif %}
+        {% endwith %}
+    {% endfor %}
+</thead>

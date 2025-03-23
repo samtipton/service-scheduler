@@ -1,0 +1,51 @@
+{% load schedule_tags %}
+
+{% comment %}
+This template expects the following context variables:
+- calendar: A list of weeks, where each week is a list of days
+- service_days: A set of days that have services
+- num_services: The maximum number of services needed
+- TODO complete list of context variables
+{% endcomment %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="pdfkit-page-size" content="Legal"/>
+    <meta name="pdfkit-orientation" content="Landscape"/>
+    <meta http-equiv="Cache-control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+            integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+            crossorigin="anonymous">
+    </script>
+    <title>{{ month_name }} {{ year }} Schedule</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'schedules/schedule.css' %}">
+    <script src="{% static 'schedules/schedule.js' %}"></script>
+</head>
+<body>
+    <div class="overlay mouse-reveal">
+        <button id="download-pdf">Download PDF</button>
+        <button id="toggle-assignment-count">Toggle Assignment Counts</button>
+        <button id="commit-schedule">Commit</button>
+    </div>
+    <div class="header">
+        <h1>{{ month_name }}</h1>
+    </div>
+{%block content%}
+<table>
+    {% include "schedules/month_schedule_header.html" with service=services.0 %}
+    {% include "schedules/month_schedule_service.html" with service=services.0 service_tasks=services.0.task_set.all %}
+    {% include "schedules/month_schedule_banner.html" with service=services.1 %}
+    {% include "schedules/month_schedule_service.html" with service=services.1 service_tasks=services.1.task_set.all %}
+    {% include "schedules/month_schedule_header.html" with service=services.2 %}
+    {% include "schedules/month_schedule_service.html" with service=services.2 service_tasks=services.2.task_set.all %}
+    {% include "schedules/month_schedule_service.html" with service=services.3 service_tasks=services.3.task_set.all %}
+</table>
+
+{%endblock%}
+</body>
+</html>

@@ -100,9 +100,7 @@ class TaskTestCase(TestCase):
             )
 
     def test_str(self):
-        self.assertEqual(
-            str(self.task1), "Test Task 1 (test_task_id_1) - Test Description"
-        )
+        self.assertEqual(str(self.task1), "test_task_id_1")
 
 
 class AssignmentTestCase(TestCase):
@@ -126,10 +124,10 @@ class AssignmentTestCase(TestCase):
         )
 
         self.user = User.objects.create_user(
-            username="testuser",
-            password="testpassword",
+            email="testuser@example.com",
             first_name="Test",
             last_name="User",
+            password="testpassword",
         )
 
     def test_assignment_creation(self):
@@ -165,14 +163,17 @@ class AssignmentTestCase(TestCase):
         )
         self.assertEqual(
             str(assignment),
-            f"{now.strftime('%Y-%m-%d %H:%M')}-test_task_id_1 -> User, Test",
+            f"{now.strftime('%Y-%m-%d %H:%M')}-test_task_id_1 -> Test User (testuser@example.com)",
         )
 
 
 class TaskPreferenceTestCase(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
-            username="testuser", password="testpassword"
+            email="testuser@example.com",
+            first_name="Test",
+            last_name="User",
+            password="testpassword",
         )
         self.service = Service.objects.create(
             name="Test Service", day_of_week=0, start_time=time(9, 0)
@@ -228,4 +229,4 @@ class TaskPreferenceTestCase(TestCase):
         task_preference = TaskPreference.objects.create(
             user=self.user, task=self.task, value=1.0
         )
-        self.assertEqual(str(task_preference), f"{self.user} -> {self.task.id} (1.0)")
+        self.assertEqual(str(task_preference), f"{self.task.id}")
