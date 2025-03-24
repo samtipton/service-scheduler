@@ -39,6 +39,7 @@ class Command(BaseCommand):
         self.seed_assignments(json_path)
         self.stdout.write(self.style.SUCCESS("Done."))
 
+    # TODO connect to schedule
     def seed_assignments(self, json_path):
         with open(json_path, "r") as f:
             assignments_data = json.load(f)

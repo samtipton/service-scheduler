@@ -46,6 +46,11 @@ This template expects the following context variables:
     {% include "schedules/month_schedule_service.html" with service=services.3 service_tasks=services.3.task_set.all %}
 </table>
 
+<div class="toast" id="toast"></div>
+<div class="assignment-map" hidden></div>
+
+    {% comment %} {% include "schedules/month_schedule_datalists.html" %} {% endcomment %}
+
 {%endblock%}
 </body>
 </html>

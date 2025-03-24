@@ -79,6 +79,10 @@ class User(AbstractUser):
 
     # TODO: add phone number field
 
+    @property
+    def eligible_tasks(self):
+        return self.tasks_with_preferences.filter(taskpreference__value__gt=0)
+
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["first_name", "last_name"]
 
@@ -100,4 +104,4 @@ class User(AbstractUser):
         return self.assignment_set.count()
 
     def __str__(self):
-        return f"{self.first_name} {self.last_name} ({self.email})"
+        return f"{self.first_name} {self.last_name}"

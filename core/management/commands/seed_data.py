@@ -17,3 +17,5 @@ class Command(BaseCommand):
         call_command("seed_assignments")
 
         call_command("seed_task_preferences")
+
+        call_command("init_assignment_stats")

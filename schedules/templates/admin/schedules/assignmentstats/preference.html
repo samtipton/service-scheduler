@@ -1,0 +1,65 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block extrahead %}
+{{ block.super }}
+<script type="text/javascript" src="{% url 'admin:jsi18n' %}"></script>
+{{ media }}
+{% endblock %}
+
+{% block coltype %}colM{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-{{ opts.app_label }} model-{{ opts.model_name }} change-form{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:schedules_assignmentstats_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; <a href="{% url 'admin:schedules_assignmentstats_change' stats.id %}">{{ stats }}</a>
+&rsaquo; {% translate 'Edit Task Preference' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <form method="post" id="{{ opts.model_name }}_form" novalidate>
+        {% csrf_token %}
+        <fieldset class="module aligned">
+            <div class="form-row">
+                <div>
+                    <label>User:</label>
+                    <div class="readonly">{{ stats.user }}</div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label>Task:</label>
+                    <div class="readonly">{{ stats.task }}</div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label>Current Value:</label>
+                    <div class="readonly">{{ preference.value }}</div>
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    {{ form.value.label_tag }}
+                    {{ form.value }}
+                    {% if form.value.errors %}
+                    <div class="errornote">
+                        {{ form.value.errors }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </fieldset>
+        <div class="submit-row">
+            <input type="submit" value="{% translate 'Save' %}" class="default" name="_save">
+            <a href="{% url 'admin:schedules_assignmentstats_change' stats.id %}" class="button cancel-link">{% translate 'Cancel' %}</a>
+        </div>
+    </form>
+</div>
+{% endblock %} 
