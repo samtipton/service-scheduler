@@ -42,6 +42,7 @@ class AssignmentAdmin(admin.ModelAdmin):
     list_display = ("task", "user", "assigned_at", "schedule")
     list_filter = ("task__service", "user", "assigned_at", "schedule")
     search_fields = ("task__name", "user__username", "schedule__name")
+    readonly_fields = ("schedule",)
 
 
 @admin.register(Service)

@@ -3,7 +3,7 @@ from django.core.management.base import BaseCommand
 from pathlib import Path
 import json
 import calendar
-from schedules.models import Service, Task, Assignment
+from schedules.models import Schedule, Service, Task, Assignment
 from users.models import User
 
 
@@ -39,7 +39,6 @@ class Command(BaseCommand):
         self.seed_assignments(json_path)
         self.stdout.write(self.style.SUCCESS("Done."))
 
-    # TODO connect to schedule
     def seed_assignments(self, json_path):
         with open(json_path, "r") as f:
             assignments_data = json.load(f)
@@ -133,9 +132,14 @@ class Command(BaseCommand):
 
                     user = user_map[user_full_name]
 
+                    schedule = Schedule.objects.get(
+                        date__year=year,
+                        date__month=month,
+                    )
+
                     # Create the assignment if it doesn't exist
                     assignment, created = Assignment.objects.get_or_create(
-                        user=user, task=task, assigned_at=assigned_at
+                        user=user, task=task, assigned_at=assigned_at, schedule=schedule
                     )
 
                     if created:

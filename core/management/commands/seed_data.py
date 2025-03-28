@@ -14,6 +14,8 @@ class Command(BaseCommand):
 
         call_command("seed_tasks")
 
+        call_command("seed_schedules")
+
         call_command("seed_assignments")
 
         call_command("seed_task_preferences")
