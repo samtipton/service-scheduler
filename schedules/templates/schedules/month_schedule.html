@@ -38,18 +38,18 @@ This template expects the following context variables:
 {%block content%}
 <table>
     {% include "schedules/month_schedule_header.html" with service=services.0 %}
-    {% include "schedules/month_schedule_service.html" with service=services.0 service_tasks=services.0.task_set.all %}
+    {% include "schedules/month_schedule_service.html" with service=services.0 service_tasks=services.0.tasks.all %}
     {% include "schedules/month_schedule_banner.html" with service=services.1 %}
-    {% include "schedules/month_schedule_service.html" with service=services.1 service_tasks=services.1.task_set.all %}
+    {% include "schedules/month_schedule_service.html" with service=services.1 service_tasks=services.1.tasks.all %}
     {% include "schedules/month_schedule_header.html" with service=services.2 %}
-    {% include "schedules/month_schedule_service.html" with service=services.2 service_tasks=services.2.task_set.all %}
-    {% include "schedules/month_schedule_service.html" with service=services.3 service_tasks=services.3.task_set.all %}
+    {% include "schedules/month_schedule_service.html" with service=services.2 service_tasks=services.2.tasks.all %}
+    {% include "schedules/month_schedule_service.html" with service=services.3 service_tasks=services.3.tasks.all %}
 </table>
 
 <div class="toast" id="toast"></div>
 <div class="assignment-map" hidden></div>
 
-    {% comment %} {% include "schedules/month_schedule_datalists.html" %} {% endcomment %}
+{% include "schedules/month_schedule_datalists.html" %}
 
 {%endblock%}
 </body>

@@ -1,7 +1,8 @@
 from collections import defaultdict
 from django.views import generic
 from django.shortcuts import render
-from schedules.models import Assignment, Service
+from django.contrib.auth import get_user_model
+from schedules.models import Assignment, AssignmentStats, Service
 from schedules.utils import (
     get_month_calendar,
     get_service_weeks,
@@ -28,6 +29,22 @@ class MonthView(generic.View):
                     assignment_key = f"{year}-{month}-{assignment.assigned_at.day}-{assignment.task.id}"
                     service_assignments[service.name][assignment_key] = assignment.user
 
+        # Create map of eligible users for each task sorted by assignment delta
+        tasks = []
+        for service in services:
+            tasks.extend(service.tasks.all())
+        eligible_users_for_task = defaultdict(list)
+
+        for task in tasks:
+            eligible_users = task.get_eligible_users()
+            eligible_users_for_task[task.id] = sorted(
+                eligible_users,
+                key=lambda user: AssignmentStats.objects.get(
+                    user=user, task=task
+                ).assignment_delta,
+            )
+        eligible_users_for_task.default_factory = None
+
         context = {
             "year": year,
             "month": month,
@@ -36,6 +53,7 @@ class MonthView(generic.View):
             "service_days": service_days,
             "service_weeks": service_weeks,
             "service_assignments": service_assignments,
+            "eligible_users_for_task": eligible_users_for_task,
             "col_span": len(service_weeks) + len(service_weeks) + 1,
             "interactive": True,
         }

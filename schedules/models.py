@@ -147,7 +147,9 @@ class Task(models.Model):
     id = models.CharField(primary_key=True, max_length=64, unique=True)
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    service = models.ForeignKey(Service, on_delete=models.RESTRICT)
+    service = models.ForeignKey(
+        Service, on_delete=models.RESTRICT, related_name="tasks"
+    )
     excludes = models.ManyToManyField("self", symmetrical=True, blank=True)
     users_with_preferences = models.ManyToManyField(
         get_user_model(),
@@ -296,6 +298,7 @@ class AssignmentStats(models.Model):
         indexes = [
             models.Index(fields=["user", "task"]),
         ]
+        ordering = ["-created_at"]
 
     def __str__(self):
         return f"{self.user.username} {self.task.name} assignment delta: {self.assignment_delta}"
