@@ -7,4 +7,5 @@ urlpatterns = [
     # Add URL patterns here
     path("", views.MonthListView.as_view(), name="index"),
     path("<int:id>/", views.MonthView.as_view(), name="month_view"),
+    path("create/", views.create_schedule, name="create_schedule"),
 ]

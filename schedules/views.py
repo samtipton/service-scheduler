@@ -1,6 +1,8 @@
 from collections import defaultdict
+from django.http import HttpResponse, HttpResponseRedirect
+from django.urls import reverse
 from django.views import generic
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 from schedules.models import Assignment, AssignmentStats, Schedule, Service
 from schedules.utils import (
     get_month_calendar,
@@ -8,9 +10,45 @@ from schedules.utils import (
 )
 
 
+def create_schedule(request):
+    if request.method == "POST":
+        name = request.POST.get("name")
+        description = request.POST.get("description")
+        date = request.POST.get("date")
+        user = request.user
+
+        base_schedule_id = request.POST.get("base_schedule")
+        base_schedule = None
+        if base_schedule_id:
+            base_schedule = get_object_or_404(Schedule, id=base_schedule_id)
+
+        # Create new schedule
+        schedule = Schedule.objects.create(
+            name=name,
+            description=description,
+            date=date,
+            user=user,
+            base_schedule=base_schedule,
+        )
+
+        # Redirect to the schedule detail page
+        return HttpResponseRedirect(f"/schedules/{schedule.id}")
+
+    # If not POST, redirect to the schedules page
+    return HttpResponseRedirect("schedules:index")
+
+
 class MonthView(generic.View):
+    def blank_schedule(self, schedule):
+        # TODO create assignments for the schedule
+        return HttpResponse(f"Schedule: {schedule.name}")
+
     def get(self, request, id):
         schedule = Schedule.objects.get(id=id)
+
+        if schedule.assignments.count() == 0:
+            return self.blank_schedule(schedule)
+
         year = schedule.date.year
         month = schedule.date.month
         month_calendar, month_name = get_month_calendar(year, month)

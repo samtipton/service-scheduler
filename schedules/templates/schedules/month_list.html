@@ -1,13 +1,16 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Schedule List</title>
-</head>
-<body>  
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Schedules{% endblock %}
+
+{% block page_title %}Schedules{% endblock %}
+{% block extra_css %}
+    <link rel="stylesheet" href="{% static 'schedules/schedules.css' %}">
+{% endblock %}
+
 {% block content %}
-<h1>Schedule</h1>
+
+<button onclick="document.getElementById('newScheduleDialog').showModal()">Create New Schedule</button>
 
 {% if schedules %}
     <ul>
@@ -22,6 +25,36 @@
 {% else %}
     <p>No schedules are available.</p>
 {% endif %}
+
+<dialog id="newScheduleDialog">
+    <h2>Create New Schedule</h2>
+    <form method="POST" action="{% url 'schedules:create_schedule' %}">
+      {% csrf_token %}
+      <div>
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" required>
+      </div>
+      <div>
+        <label for="description">Description</label>
+        <textarea id="description" name="description" rows="3"></textarea>
+      </div>
+      <div>
+        <label for="date">Date</label>
+        <input type="date" id="date" name="date" required>
+      </div>
+      <div>
+        <label for="base_schedule">Base Schedule</label>
+        <select id="base_schedule" name="base_schedule">
+          <option value="">None</option>
+          {% for schedule in schedules %}
+            <option value="{{ schedule.id }}">{{ schedule.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <button type="button" onclick="document.getElementById('newScheduleDialog').close()">Cancel</button>
+        <button type="submit">Create Schedule</button>
+      </div>
+    </form>
+  </dialog>
 {% endblock %}
-</body>
-</html>

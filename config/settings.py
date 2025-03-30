@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 import sys
 from decouple import config
@@ -59,6 +60,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "schedules.middleware.LoginRequiredMiddleware",
 ]
 
 if DEBUG:  # Only enable the toolbar in debug mode
@@ -79,7 +81,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [os.path.join(BASE_DIR, "templates")],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -91,6 +93,11 @@ TEMPLATES = [
         },
     },
 ]
+
+# Authentication settings
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "schedules:index"  # Adjust to your schedules index view name
+LOGOUT_REDIRECT_URL = "login"
 
 WSGI_APPLICATION = "config.wsgi.application"
 
