@@ -27,6 +27,12 @@ SECRET_KEY = config("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+
+def show_toolbar(request):
+    # Toggle the toolbar based on a query parameter
+    return request.GET.get("debug") == "true"
+
+
 ALLOWED_HOSTS = []
 
 TESTING = "test" in sys.argv
@@ -37,7 +43,6 @@ INSTALLED_APPS = [
     "users.apps.UsersConfig",
     "schedules.apps.SchedulesConfig",
     "core.apps.CoreConfig",
-    "debug_toolbar",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -54,8 +59,20 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "debug_toolbar.middleware.DebugToolbarMiddleware",
 ]
+
+if DEBUG:  # Only enable the toolbar in debug mode
+    MIDDLEWARE += [
+        "debug_toolbar.middleware.DebugToolbarMiddleware",
+    ]
+
+    INSTALLED_APPS += [
+        "debug_toolbar",
+    ]
+
+    DEBUG_TOOLBAR_CONFIG = {
+        "SHOW_TOOLBAR_CALLBACK": show_toolbar,
+    }
 
 ROOT_URLCONF = "config.urls"
 

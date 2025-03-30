@@ -9,12 +9,12 @@
 {% block content %}
 <h1>Schedule</h1>
 
-{% if schedule_year_month_list %}
+{% if schedules %}
     <ul>
-    {% for year_month in schedule_year_month_list %}
+    {% for schedule in schedules %}
         <li>
-            <a href="{% url 'schedules:month_view' year=year_month.year month=year_month.month %}">
-                {{ year_month.year }}-{{ year_month.month }}
+            <a href="{% url 'schedules:month_view' id=schedule.id %}">
+                {{ schedule.name }}
             </a>
         </li>
     {% endfor %}

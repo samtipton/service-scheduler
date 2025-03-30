@@ -215,13 +215,14 @@ class Assignment(models.Model):
         related_name="past_assignments",
     )
     task = models.ForeignKey(Task, on_delete=models.RESTRICT)
-    assigned_at = models.DateTimeField(db_index=True)
+    assigned_at = models.DateTimeField()
     schedule = models.ForeignKey(
         Schedule,
         on_delete=models.CASCADE,
         related_name="assignments",
         null=True,  # Allow null for backward compatibility
         blank=True,
+        db_index=True,
     )
 
     class Meta:

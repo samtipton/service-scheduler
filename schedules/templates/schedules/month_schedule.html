@@ -1,4 +1,5 @@
 {% load schedule_tags %}
+{% load static %}
 
 {% comment %}
 This template expects the following context variables:
@@ -22,7 +23,6 @@ This template expects the following context variables:
             crossorigin="anonymous">
     </script>
     <title>{{ month_name }} {{ year }} Schedule</title>
-    {% load static %}
     <link rel="stylesheet" href="{% static 'schedules/schedule.css' %}">
     <script src="{% static 'schedules/schedule.js' %}"></script>
 </head>
@@ -47,7 +47,7 @@ This template expects the following context variables:
 </table>
 
 <div class="toast" id="toast"></div>
-<div class="assignment-map" hidden></div>
+<div class="assignment-map hidden"></div>
 
 {% include "schedules/month_schedule_datalists.html" %}
 
