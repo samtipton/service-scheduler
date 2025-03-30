@@ -27,9 +27,9 @@ class CustomUserManager(BaseUserManager):
         email = self.normalize_email(email)
         user = self.model(
             email=email,
-            first_name=first_name.capitalize(),
-            last_name=last_name.capitalize(),
-            username=f"{first_name.capitalize()} {last_name.capitalize()}",
+            first_name=first_name,
+            last_name=last_name,
+            username=f"{first_name} {last_name}",
             **extra_fields,
         )
         user.password = make_password(password)
@@ -62,14 +62,11 @@ class User(AbstractUser):
     First and last name are required.
     """
 
-    username_validator = UnicodeUsernameValidator()
-
     username = models.CharField(
         "username",
         max_length=254,
         unique=False,
         help_text="Required. 150 characters or fewer. Letters, digits and @/./+/-/_ only.",
-        validators=[username_validator],
         blank=True,
     )
 
@@ -101,7 +98,7 @@ class User(AbstractUser):
         Count the number of assignments for this user.
         Uses a reverse relationship to avoid circular imports.
         """
-        return self.assignment_set.count()
+        return self.past_assignments.count()
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"

@@ -1,7 +1,6 @@
 from collections import defaultdict
 from django.views import generic
 from django.shortcuts import render
-from django.contrib.auth import get_user_model
 from schedules.models import Assignment, AssignmentStats, Service
 from schedules.utils import (
     get_month_calendar,
@@ -14,6 +13,7 @@ class MonthView(generic.View):
         month_calendar, month_name = get_month_calendar(year, month)
 
         services = Service.objects.all()
+
         service_days = {service.day_of_week for service in services}
         service_weeks = get_service_weeks(month_calendar, service_days)
 
@@ -30,18 +30,34 @@ class MonthView(generic.View):
                     service_assignments[service.name][assignment_key] = assignment.user
 
         # Create map of eligible users for each task sorted by assignment delta
-        tasks = []
+        tasks = set()
         for service in services:
-            tasks.extend(service.tasks.all())
-        eligible_users_for_task = defaultdict(list)
+            tasks.update(service.tasks.all())
 
+        # Try to get assignment stats from cache
+        # Cache miss, calculate assignment stats
+        assignment_stats = {}
+
+        # Option 1: Using a subquery with Django ORM
+        for task in tasks:
+            eligible_users = task.get_eligible_users()
+
+            # Get the latest stats for each eligible user for this task
+            latest_stats = (
+                AssignmentStats.objects.filter(user__in=eligible_users, task=task)
+                .order_by("user", "-created_at")
+                .distinct("user")
+            )
+
+            for stat in latest_stats:
+                assignment_stats[(task.id, stat.user.pk)] = stat
+
+        eligible_users_for_task = defaultdict(list)
         for task in tasks:
             eligible_users = task.get_eligible_users()
             eligible_users_for_task[task.id] = sorted(
                 eligible_users,
-                key=lambda user: AssignmentStats.objects.get(
-                    user=user, task=task
-                ).assignment_delta,
+                key=lambda user: assignment_stats[(task.id, user.pk)].assignment_delta,
             )
         eligible_users_for_task.default_factory = None
 

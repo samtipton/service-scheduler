@@ -1,7 +1,7 @@
 # service-scheduler 
  A django app for creating and fine-tuning "fair" schedules using 
  * [PuLP](https://coin-or.github.io/pulp/) optimization 
- * MySQL
+ * Postgresql
  * pdfkit
 
 ## Install

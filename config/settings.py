@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import sys
 from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -28,6 +29,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+TESTING = "test" in sys.argv
 
 # Application definition
 
@@ -35,6 +37,7 @@ INSTALLED_APPS = [
     "users.apps.UsersConfig",
     "schedules.apps.SchedulesConfig",
     "core.apps.CoreConfig",
+    "debug_toolbar",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -51,6 +54,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "debug_toolbar.middleware.DebugToolbarMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -80,12 +84,12 @@ AUTH_USER_MODEL = "users.User"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.mysql",
+        "ENGINE": "django.db.backends.postgresql",
         "NAME": "servicescheduler",
-        "USER": "scheduler-admin",
-        "PASSWORD": config("DATABASE_PASSWORD"),
-        "HOST": config("DATABASE_URL"),
-        "PORT": "3306",  # Default MySQL port
+        "USER": "postgres",
+        "PASSWORD": config("POSTGRES_PASSWORD"),
+        "HOST": "localhost",
+        "PORT": "5432",
     }
 }
 
@@ -129,3 +133,5 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+INTERNAL_IPS = ["127.0.0.1"]

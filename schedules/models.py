@@ -275,7 +275,8 @@ class AssignmentStats(models.Model):
         Task, on_delete=models.CASCADE, related_name="assignment_stats"
     )
 
-    # TODO FK to Service?
+    # snapshot of assignment stats at the time this schedule was last comitted
+    schedule = models.ManyToManyField(Schedule, related_name="assignment_stats")
 
     """ Expected average of assignment frequency with bias taken into account """
     ideal_average = models.DecimalField(
@@ -297,8 +298,11 @@ class AssignmentStats(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=["user", "task"]),
+            models.Index(fields=["task", "user"]),
+            models.Index(fields=["created_at"]),
         ]
         ordering = ["-created_at"]
+        get_latest_by = "created_at"
 
     def __str__(self):
         return f"{self.user.username} {self.task.name} assignment delta: {self.assignment_delta}"

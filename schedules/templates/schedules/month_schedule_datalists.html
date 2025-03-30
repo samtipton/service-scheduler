@@ -1,0 +1,11 @@
+{% load schedule_tags %}
+{% block content %}
+
+{% for task_id, eligible_users in eligible_users_for_task.items %}
+<datalist id="{{ task_id }}">
+    {% for user in eligible_users %}
+        <option value="{{ user.last_name }}, {{ user.first_name }}">{{ user.last_name }}, {{ user.first_name }}</option>
+    {% endfor %}
+</datalist>
+{% endfor %}
+{% endblock %}

@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from schedules.models import Task, AssignmentStats
+from schedules.models import Task, AssignmentStats, Schedule
 from decimal import Decimal
 
 
@@ -19,6 +19,22 @@ class Command(BaseCommand):
         stats_created = 0
         stats_updated = 0
 
+        # Get the most recent Schedule
+        # Each schedule holds a snapshot of the most recent assignment stats
+        # at the time it was created
+        latest_schedule = Schedule.objects.order_by("-date").first()
+        if not latest_schedule:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"No schedules found to associate with assignment stats"
+                )
+            )
+        else:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Assocating stats with latest schedule: {latest_schedule.name}"
+                )
+            )
         with transaction.atomic():
             for task in tasks:
                 # Get eligible users for this task
@@ -31,17 +47,16 @@ class Command(BaseCommand):
                     )
                     continue
 
-                # Calculate ideal average for this task
-                ideal_avg = Decimal("1.0") / Decimal(len(eligible_users))
-
                 # Create or update stats for each eligible user
                 for user in eligible_users:
                     stats, created = AssignmentStats.objects.get_or_create(
                         user=user, task=task
                     )
+
                     if not created:
                         stats_updated += 1
                     else:
+                        stats.schedule.add(latest_schedule)
                         stats_created += 1
 
         self.stdout.write(
