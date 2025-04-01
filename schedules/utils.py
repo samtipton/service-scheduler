@@ -46,3 +46,20 @@ def get_month_calendar(year, month):
     """
     calendar.setfirstweekday(calendar.SUNDAY)
     return calendar.monthcalendar(year, month), calendar.month_name[month]
+
+
+def get_service_day(service_week: list[list[int]], service_days, service_day):
+    """
+    get the calendar day for a given a service week and a service day.
+    if service_day is None, return the first calendar day in service_week that is
+    also in service_days.
+
+    Must be same logic as in schedule_tags#get_service_day
+    """
+    if service_day is not None:
+        return service_week[service_day]
+    else:
+        for i, day in enumerate(service_week):
+            if i in service_days and day != 0:
+                return day
+    return None

@@ -23,7 +23,7 @@
     width: 2%;
   }
   
-  td.empty-duty-cell {
+  td.invalid-duty-cell {
     background: #eee;
   }
   

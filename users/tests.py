@@ -51,11 +51,11 @@ class UserModelTests(TestCase):
     def test_default_username_is_full_name(self):
         self.assertEqual(self.user.username, "Test User")
 
-    def test_default_username_is_full_name_capitalized(self):
+    def test_default_username_is_full_name_not_capitalized(self):
         user = User.objects.create_user(
             email="test3@example.com", first_name="test", last_name="user"
         )
-        self.assertEqual(user.username, "Test User")
+        self.assertEqual(user.username, "test user")
 
     def test_user_manager_get_by_natural_key(self):
         user = User.objects.get_by_natural_key("test@example.com")

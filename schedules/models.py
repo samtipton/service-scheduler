@@ -50,6 +50,7 @@ class Schedule(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
     draft = models.BooleanField(default=True)
+    # TODO add services?
     # TODO add group
 
     # The base schedule this one builds upon (like a parent commit)

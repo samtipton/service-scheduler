@@ -17,7 +17,7 @@ def get_item(lst, index):
     """
     try:
         return lst[index]
-    except (IndexError, TypeError):
+    except (IndexError, TypeError, KeyError):
         return None
 
 

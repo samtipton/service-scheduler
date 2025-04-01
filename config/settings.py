@@ -63,7 +63,7 @@ MIDDLEWARE = [
     "schedules.middleware.LoginRequiredMiddleware",
 ]
 
-if DEBUG:  # Only enable the toolbar in debug mode
+if DEBUG and not TESTING:  # Only enable the toolbar in debug mode
     MIDDLEWARE += [
         "debug_toolbar.middleware.DebugToolbarMiddleware",
     ]
@@ -73,7 +73,7 @@ if DEBUG:  # Only enable the toolbar in debug mode
     ]
 
     DEBUG_TOOLBAR_CONFIG = {
-        "SHOW_TOOLBAR_CALLBACK": show_toolbar,
+        "SHOW_TOOLBAR_CALLBACK": "config.settings.show_toolbar",
     }
 
 ROOT_URLCONF = "config.urls"
@@ -158,4 +158,4 @@ STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-INTERNAL_IPS = ["127.0.0.1"]
+INTERNAL_IPS = ["127.0.0.1", "::1"]

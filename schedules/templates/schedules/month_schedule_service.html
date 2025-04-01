@@ -1,7 +1,7 @@
 {% load schedule_tags %}
 
 <tbody>
-    {% for task in service_tasks %}
+    {% for task in service.tasks.all %}
         <tr>
             <td>{{ task.name }}</td>
             {% for week in service_weeks %}
@@ -13,11 +13,16 @@
                             <td class="empty"></td>
                             {% include "schedules/assignment_cell.html" with assignment_key=assignment_key %}
                             {% endwith %}
+                        {% else %}
+                            <td class="empty"></td>
+                            {% with user=None %}
+                                {% include "schedules/assignment_cell.html" with assignment_key=assignment_key %}
+                            {% endwith %}
                         {% endif %}
                     {% endwith %} 
                 {% else %}
                     <td class="empty"></td>
-                    <td class="empty-duty-cell"></td>
+                    <td class="invalid-duty-cell"></td>
                 {% endif %}
             {%endfor %}
         </tr>
