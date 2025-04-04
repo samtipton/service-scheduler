@@ -62,7 +62,7 @@ class Scheduler:
 
         # TODO INCLUDE HISTORICAL VARS FROM BASE SCHEDULE/ ALL ASSIGNMENTS
         self.assignment_vars = list(
-            (date_task, user)
+            (date_task.task_id, user)
             for user in self.users
             for date_task in self.date_tasks
             if self.is_eligible(user, date_task)
@@ -100,14 +100,14 @@ class Scheduler:
                 )
             )
             # 1 if assigned, 0 otherwise
-            * self.x[(date_task, user)]
+            * self.x[(date_task.task_id, user)]
             for user in self.users
             for date_task in self.date_tasks
             # if self.is_eligible(person, trim_task_name(date_task))
         )
 
-    def is_eligible(self, user: User, date_task: str):
-        return user in self.eligibility[date_task.split("-")[:-1]]
+    def is_eligible(self, user: User, date_task: DateTask):
+        return user in self.eligibility[date_task.task_id]
 
     def get_date_tasks(self) -> list[DateTask]:
         """
@@ -148,7 +148,7 @@ class Scheduler:
         for service in self.services:
             for task in service.tasks.all():
                 for user in task.get_eligible_users():
-                    eligibility[task].add(user)
+                    eligibility[task.id].add(user)
 
         return eligibility
 

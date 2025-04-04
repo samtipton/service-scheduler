@@ -3,10 +3,16 @@ black==25.1.0
 click==8.1.8
 Django==5.1.7
 django-debug-toolbar==5.1.0
+iniconfig==2.1.0
 packaging==24.2
 pathspec==0.12.1
 platformdirs==4.3.6
+pluggy==1.5.0
 psycopg2-binary==2.9.10
+PuLP==3.1.1
+pytest==8.3.5
+pytest-django==4.10.0
+pytest-mock==3.14.0
 python-decouple==3.8
 pytz==2025.2
 sqlparse==0.5.3
