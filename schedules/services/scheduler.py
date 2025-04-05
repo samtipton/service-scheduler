@@ -1,4 +1,6 @@
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
+from datetime import datetime, timedelta
+from itertools import chain, zip_longest
 from django.contrib.auth import get_user_model
 from schedules.models import AssignmentStats, Schedule, Service, Task, TaskPreference
 from schedules.utils import (
@@ -8,14 +10,22 @@ from schedules.utils import (
 )
 from users.models import User
 
-from pulp import LpVariable, LpProblem, LpMaximize, lpSum
+from pulp import LpVariable, LpProblem, LpMaximize, lpSum, PULP_CBC_CMD, LpStatus
 
 
 class Scheduler:
     class DateTask:
-        def __init__(self, date: str, task_id: str):
+        def __init__(self, date: str, task: Task):
             self.date = date
-            self.task_id = task_id
+            self.task = task
+
+        @property
+        def task_id(self):
+            return self.task.id
+
+        @property
+        def day_of_week(self):
+            return self.task.service.day_of_week
 
         def __str__(self):
             return f"{self.date}-{self.task_id}"
@@ -35,7 +45,9 @@ class Scheduler:
         self.users = get_user_model().objects.all()
         self.service_days = {service.day_of_week for service in services}
         self.service_weeks = get_service_weeks(self.month_calendar, self.service_days)
+        self.tasks = self.get_tasks()
         self.date_tasks = self.get_date_tasks()
+        self.task_exclusions = self.get_exclusions()
         self.eligibility = self.get_eligiblity()
 
         # TODO filter by group
@@ -60,12 +72,34 @@ class Scheduler:
                 preference.task.id
             ] = preference
 
-        # TODO INCLUDE HISTORICAL VARS FROM BASE SCHEDULE/ ALL ASSIGNMENTS
+        # Get assignments from the base schedule
+        self.assignments = {}
+        self.base_assignments = schedule.base_schedule.assignments.all().select_related(
+            "user", "task"
+        )
+
+        # Create a dictionary mapping (date, task_id) to user for quick lookup
+        # and create DateTasks for these assignments
+        self.base_date_tasks = []
+        for assignment in self.base_assignments:
+            date_str = assignment.date.strftime("%Y-%m-%d")
+            key = (date_str, assignment.task_id)
+            self.assignments[key] = assignment.user
+
+            # Create DateTask for each assignment
+            date_task = self.DateTask(date_str, assignment.task_id)
+            self.base_date_tasks.append(date_task)
+
         self.assignment_vars = list(
-            (date_task.task_id, user)
-            for user in self.users
-            for date_task in self.date_tasks
-            if self.is_eligible(user, date_task)
+            chain(
+                (
+                    (date_task, user)
+                    for user in self.users
+                    for date_task in self.date_tasks
+                    if self.is_eligible(user, date_task)
+                ),
+                self.base_date_tasks,
+            )
         )
 
         self.x = LpVariable.dicts(
@@ -75,13 +109,49 @@ class Scheduler:
         )
 
         self.set_objective_function()
-        # self.constrain_past_assignments()
-        # self.constrain_one_person_per_task()
-        # self.constrain_assign_only_eligible_people()
-        # self.constrain_do_not_assign_excluded_tasks()
-        # self.constrain_do_not_over_assign_in_month()
-        # self.constrain_do_not_over_assign_new_people()
-        # self.constrain_month_boundary_assignments()
+        self.constrain_past_assignments()
+        self.constrain_one_person_per_task()
+        self.constrain_assign_only_eligible_people()
+        self.constrain_do_not_assign_excluded_tasks()
+        self.constrain_do_not_over_assign_in_month()
+        self.constrain_month_boundary_assignments()
+
+    def solve(self, verbose: bool = False):
+        result = self.prob.solve(PULP_CBC_CMD(msg=verbose))
+
+        if self.prob.status == -1:
+            print(f"result: {LpStatus[self.prob.status]}")
+            print("debug constraints")
+
+        assignment = {}
+        for user in self.users:
+            assigned_date_tasks = [
+                date_task
+                for date_task in self.date_tasks
+                if self.x[(date_task, user)].value() == 1
+            ]
+            if assigned_date_tasks:
+                # record assignment
+                assignment[user.inverted_name()] = assigned_date_tasks
+                for date_task in assigned_date_tasks:
+                    if not self.is_eligible(user, date_task):
+                        print(
+                            f"user {user.inverted_name()} is not eligible for task {date_task.task_id}"
+                        )
+
+        tasks_to_user_name = {}
+        for user in self.users:
+            if user.inverted_name() in assignment:
+                for date_task in assignment[user.inverted_name()]:
+                    tasks_to_user_name[date_task] = user.inverted_name()
+
+        sorted_assignments = OrderedDict()
+        for date_task, user_name in sorted(
+            tasks_to_user_name.items(), key=lambda x: x[0].task.order
+        ):
+            sorted_assignments[str(date_task)] = user_name
+
+        return result, sorted_assignments
 
     def set_objective_function(self):
         """
@@ -103,11 +173,195 @@ class Scheduler:
             * self.x[(date_task.task_id, user)]
             for user in self.users
             for date_task in self.date_tasks
-            # if self.is_eligible(person, trim_task_name(date_task))
         )
+
+    def constrain_past_assignments(self):
+        """Constrain all past assignments variables to 1"""
+        for assignment in self.base_assignments:
+            self.prob += self.x[(assignment.task.id, assignment.user)] == 1
+
+    def constrain_one_person_per_task(self):
+        """Constrain each task to have only one person assigned to it"""
+        for date_task in self.date_tasks:
+            self.prob += (
+                lpSum(
+                    self.x[(date_task.task_id, user)]
+                    for user in self.users
+                    if self.is_eligible(user, date_task)  # not in original
+                )
+                == 1
+            )
+
+    def constrain_assign_only_eligible_people(self):
+        # TODO may not need, only have eligible date_task:user assignment variables now
+        pass
+
+    def constrain_do_not_assign_excluded_tasks(self):
+        for task1, task2 in self.task_exclusions:
+            for user in self.users:
+                if self.is_eligible(user, task1) and self.is_eligible(user, task2):
+                    for ineligible_pair in self.week_aligned_date_task_pairs(
+                        task1, task2
+                    ):
+                        if (
+                            0 not in ineligible_pair
+                            and ineligible_pair[0] != ineligible_pair[1]
+                        ):
+                            self.prob += (
+                                self.x[(ineligible_pair[0], user)]
+                                + self.x[(ineligible_pair[1], user)]
+                                <= 1
+                            )
+
+    def constrain_do_not_over_assign_in_month(self):
+        for task in self.tasks:
+            eligible = self.eligibility[task.id]
+            num_eligible = len(eligible)
+            for user in eligible:
+                date_tasks = self.filter_date_tasks_by_task(self.date_tasks, task)
+
+                if num_eligible > len(date_tasks):
+                    # we have an abundance everyone should go at most once
+                    self.prob += (
+                        lpSum(
+                            self.x[(date_task.task_id, user)]
+                            for date_task in date_tasks
+                        )
+                        <= 1
+                    )
+                else:
+                    # Some may repeat, but no one should repeat more than one more than the other people
+                    self.prob += (
+                        lpSum(
+                            self.x[(date_task.task_id, user)]
+                            for date_task in date_tasks
+                        )
+                        <= (len(date_tasks) + num_eligible - 1) / num_eligible
+                    )
+                    # And everyone should get assigned at least once
+                    self.prob += (
+                        lpSum(
+                            self.x[(date_task.task_id, user)]
+                            for date_task in date_tasks
+                        )
+                        >= 1
+                    )
+
+    def constrain_month_boundary_assignments(self):
+        """
+        do not double assign person in next week if there are multiple choices
+        month boundary doesn't matter rename method
+        """
+        today = datetime(self.year, self.month, 1)
+        first_of_month = today.replace(day=1)
+        last_week_prev_month = first_of_month - timedelta(days=1)
+
+        filtered_assignments = {}
+        for date_task, assigned in self.assignment_vars:
+            date_part = date_task.date
+            date_obj = datetime.strptime(date_part, "%Y-%m-%d")
+
+            if date_obj >= last_week_prev_month:
+                filtered_assignments[date_task] = assigned
+
+        task_consec_pairs_dict = defaultdict(list)
+        grouped_tasks = defaultdict(list)
+
+        for date_task in filtered_assignments.keys():
+            grouped_tasks[date_task.task_id].append(date_task)
+
+        # Sort and create tuples
+        # assumes we schedule contiguous months
+        # sort, then group by
+        # {
+        # task: [(dt0,dt1), (dt1, dt2), (dt2, dt3), (dt3, dt4])]
+        # }
+        for task_id, date_tasks in grouped_tasks.items():
+            sorted_dates = sorted(
+                date_tasks, key=lambda x: datetime.strptime(x.date, "%Y-%m-%d")
+            )
+
+            task_consec_pairs_dict[task_id] = [
+                (sorted_dates[i], sorted_dates[i + 1])
+                for i in range(len(sorted_dates) - 1)
+            ]
+
+        task_consec_pairs_dict = dict(task_consec_pairs_dict)
+
+        for user in self.users:
+            for task_id, consec_date_task_pairs in task_consec_pairs_dict.items():
+                if (
+                    self.is_eligible(user, task_id)
+                    # must check that there are enough people to go around
+                    and len(self.get_eligible[task_id]) >= 2
+                ):
+                    for i, (earlier_date_task, later_date_task) in enumerate(
+                        consec_date_task_pairs
+                    ):
+                        if (
+                            # earliest date is from last month, this assignment is known
+                            i == 0
+                            and user == filtered_assignments[earlier_date_task]
+                        ) or i > 0:
+                            self.prob += (
+                                self.x[(earlier_date_task, user)]
+                                + self.x[(later_date_task, user)]
+                            ) <= 1
+
+    def get_exclusions(self):
+        exclusions = {}
+        for service in self.services:
+            for task in service.tasks.all():
+                for exclusion in task.excludes.all():
+                    exclusions.add((task.id, exclusion.id))
+
+        return exclusions
+
+    def is_eligible(self, user: User, task_id: str):
+        return user in self.eligibility[task_id]
 
     def is_eligible(self, user: User, date_task: DateTask):
         return user in self.eligibility[date_task.task_id]
+
+    def week_aligned_date_task_pairs(self, task1: Task, task2: Task):
+        """
+        need to pad start to get weekly duties to align correctly
+        otherwise we exclude tasks in different weeks
+        """
+        date_tasks1 = self.filter_date_tasks_by_task(task1)
+        date_tasks2 = self.filter_date_tasks_by_task(task2)
+
+        if len(date_tasks1) != len(date_tasks2):
+            task1weekly = task1.service.day_of_week is None
+            task2weekly = task2.service.day_of_week is None
+
+            if task1weekly ^ task2weekly:
+                weekly_date_tasks = date_tasks1 if task1weekly else date_tasks2
+                daily_date_tasks = date_tasks2 if task1weekly else date_tasks1
+
+                if (
+                    len(weekly_date_tasks) > len(daily_date_tasks)
+                    and int(daily_date_tasks[0].day_of_week)
+                    not in self.month_calendar[0]
+                ):
+                    daily_date_tasks = [0, *daily_date_tasks]
+
+                date_tasks1 = daily_date_tasks
+                date_tasks2 = weekly_date_tasks
+
+        return zip_longest(date_tasks1, date_tasks2, fillvalue=0)
+
+    def filter_date_tasks_by_task(
+        self, date_tasks: list[DateTask], task: Task
+    ) -> list[DateTask]:
+        return [date_task for date_task in date_tasks if date_task.task_id == task.id]
+
+    def get_tasks(self) -> list[Task]:
+        tasks = []
+        for service in self.services:
+            tasks.extend(service.tasks.all())
+
+        return tasks
 
     def get_date_tasks(self) -> list[DateTask]:
         """
@@ -135,10 +389,16 @@ class Scheduler:
                         # )
                         date_tasks.append(
                             Scheduler.DateTask(
-                                f"{self.year}-{self.month}-{service_day}", task.id
+                                f"{self.year}-{self.month}-{service_day}", task
                             )
                         )
         return date_tasks
+
+    def get_eligible(self, task_id: str):
+        return self.eligibility[task_id]
+
+    def get_eligible(self, task: Task):
+        return self.eligibility[task.id]
 
     def get_eligiblity(self):
         """
@@ -151,6 +411,3 @@ class Scheduler:
                     eligibility[task.id].add(user)
 
         return eligibility
-
-    def solve(self):
-        pass

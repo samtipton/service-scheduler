@@ -24,7 +24,7 @@ class MonthView(generic.View):
 
         # TODO check if we can prefetch tasks here
         services = Service.objects.prefetch_related(
-            "tasks__users_with_preferences"
+            "tasks__users_with_preferences", "tasks__excludes"
         ).all()
 
         assignments = schedule.assignments.select_related(
