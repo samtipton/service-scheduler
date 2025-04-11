@@ -1,6 +1,8 @@
 from collections import OrderedDict, defaultdict
 from datetime import datetime, timedelta
+from decimal import Decimal
 from itertools import chain, zip_longest
+import math
 from django.contrib.auth import get_user_model
 from schedules.models import AssignmentStats, Schedule, Service, Task, TaskPreference
 from schedules.utils import (
@@ -17,6 +19,8 @@ class Scheduler:
     class DateTask:
         def __init__(self, date: str, task: Task):
             self.date = date
+            if type(task) != Task:
+                raise ValueError("task must be a Task object")
             self.task = task
 
         @property
@@ -36,6 +40,7 @@ class Scheduler:
         services: list[Service],
     ):
         # TODO optimize queries
+        self.max_assignments = 5
         self.year = schedule.date.year
         self.month = schedule.date.month
         self.services = services
@@ -51,8 +56,8 @@ class Scheduler:
         self.eligibility = self.get_eligiblity()
 
         # TODO filter by group
-        self.assignment_stats = schedule.assignment_stats.all().select_related(
-            "user", "task"
+        self.assignment_stats = (
+            schedule.base_schedule.assignment_stats.all().select_related("user", "task")
         )
         # Dictionary of dictionaries for user -> task -> assignment_stat
         self.user_task_stats: defaultdict[int, dict[str, AssignmentStats]] = (
@@ -73,7 +78,6 @@ class Scheduler:
             ] = preference
 
         # Get assignments from the base schedule
-        self.assignments = {}
         self.base_assignments = schedule.base_schedule.assignments.all().select_related(
             "user", "task"
         )
@@ -81,14 +85,14 @@ class Scheduler:
         # Create a dictionary mapping (date, task_id) to user for quick lookup
         # and create DateTasks for these assignments
         self.base_date_tasks = []
+        self.base_assignments_dict = {}
         for assignment in self.base_assignments:
-            date_str = assignment.date.strftime("%Y-%m-%d")
-            key = (date_str, assignment.task_id)
-            self.assignments[key] = assignment.user
+            date_str = assignment.assigned_at.strftime("%Y-%m-%d")
+            date_task = self.DateTask(date_str, assignment.task)
+            self.base_assignments_dict[date_task] = assignment.user
 
             # Create DateTask for each assignment
-            date_task = self.DateTask(date_str, assignment.task_id)
-            self.base_date_tasks.append(date_task)
+            self.base_date_tasks.append((date_task, assignment.user))
 
         self.assignment_vars = list(
             chain(
@@ -108,15 +112,19 @@ class Scheduler:
             cat="Binary",
         )
 
+        # Cache for adjusted averages
+        self._adjusted_average_cache = {}
+
         self.set_objective_function()
         self.constrain_past_assignments()
         self.constrain_one_person_per_task()
         self.constrain_assign_only_eligible_people()
         self.constrain_do_not_assign_excluded_tasks()
-        self.constrain_do_not_over_assign_in_month()
+        self.constrain_do_not_over_assign_same_task()
         self.constrain_month_boundary_assignments()
+        self.constrain_total_assignments()
 
-    def solve(self, verbose: bool = False):
+    def solve(self, verbose: bool = False) -> tuple[any, dict[str, str]]:
         result = self.prob.solve(PULP_CBC_CMD(msg=verbose))
 
         if self.prob.status == -1:
@@ -128,7 +136,8 @@ class Scheduler:
             assigned_date_tasks = [
                 date_task
                 for date_task in self.date_tasks
-                if self.x[(date_task, user)].value() == 1
+                if (date_task, user) in self.x
+                and self.x[(date_task, user)].value() == 1
             ]
             if assigned_date_tasks:
                 # record assignment
@@ -145,6 +154,7 @@ class Scheduler:
                 for date_task in assignment[user.inverted_name()]:
                     tasks_to_user_name[date_task] = user.inverted_name()
 
+        # I don't think we actually need to sort
         sorted_assignments = OrderedDict()
         for date_task, user_name in sorted(
             tasks_to_user_name.items(), key=lambda x: x[0].task.order
@@ -163,29 +173,74 @@ class Scheduler:
         self.prob += lpSum(
             # maximize the difference between ideal and actual averages
             (
-                self.user_task_stats[user.pk][date_task.task_id].ideal_average
+                float(self.get_ideal_average(user, date_task))
                 - (
-                    self.user_task_stats[user.pk][date_task.task_id].actual_average
+                    float(self.get_adjusted_actual_average(user, date_task))
                     * self.user_task_preferences[user.pk][date_task.task_id].value
                 )
             )
             # 1 if assigned, 0 otherwise
-            * self.x[(date_task.task_id, user)]
+            * self.x[(date_task, user)]
             for user in self.users
             for date_task in self.date_tasks
+            if self.is_eligible(user, date_task)
         )
+
+    def get_adjusted_actual_average(self, user: User, date_task: DateTask):
+        cache_key = (user.pk, date_task.task_id)
+
+        if cache_key in self._adjusted_average_cache:
+            return self._adjusted_average_cache[cache_key]
+
+        actual = float(self.get_actual_average(user, date_task))
+        ideal = float(self.get_ideal_average(user, date_task))
+
+        # Very low threshold - only affect users with almost no assignments
+        threshold_value = ideal * 0.05  # 5% of ideal
+
+        if actual < threshold_value:
+            # Binary-like adjustment - either fully adjust or not
+            # For users below threshold, pull them 90% of the way to ideal
+            adjusted_actual = actual + (ideal - actual) * 0.9
+            # print(
+            #     f"pulling {actual} to {adjusted_actual} for {user.inverted_name()} {date_task.task_id}"
+            # )
+            self._adjusted_average_cache[cache_key] = adjusted_actual
+            return adjusted_actual
+
+        self._adjusted_average_cache[cache_key] = actual
+        return actual
+
+    def get_actual_average(self, user: User, date_task: DateTask):
+        if user.pk not in self.user_task_stats:
+            print(f"user {user.pk} does not have a task stat")
+            return 0
+        if date_task.task_id not in self.user_task_stats[user.pk]:
+            raise KeyError(
+                f"user {user.pk} does not have a task stat for task {date_task.task_id}"
+            )
+        return self.user_task_stats[user.pk][date_task.task_id].actual_average
+
+    def get_ideal_average(self, user: User, date_task: DateTask):
+        if user.pk not in self.user_task_stats:
+            return 0
+        if date_task.task_id not in self.user_task_stats[user.pk]:
+            raise KeyError(
+                f"user {user.pk} does not have a task stat for task {date_task.task_id}"
+            )
+        return self.user_task_stats[user.pk][date_task.task_id].ideal_average
 
     def constrain_past_assignments(self):
         """Constrain all past assignments variables to 1"""
-        for assignment in self.base_assignments:
-            self.prob += self.x[(assignment.task.id, assignment.user)] == 1
+        for base_date_task, user in self.base_assignments_dict.items():
+            self.prob += self.x[(base_date_task, user)] == 1
 
     def constrain_one_person_per_task(self):
         """Constrain each task to have only one person assigned to it"""
         for date_task in self.date_tasks:
             self.prob += (
                 lpSum(
-                    self.x[(date_task.task_id, user)]
+                    self.x[(date_task, user)]
                     for user in self.users
                     if self.is_eligible(user, date_task)  # not in original
                 )
@@ -213,39 +268,41 @@ class Scheduler:
                                 <= 1
                             )
 
-    def constrain_do_not_over_assign_in_month(self):
+    def constrain_do_not_over_assign_same_task(self):
         for task in self.tasks:
-            eligible = self.eligibility[task.id]
+            task_id = task.id
+            eligible = self.get_eligible(task)
             num_eligible = len(eligible)
             for user in eligible:
-                date_tasks = self.filter_date_tasks_by_task(self.date_tasks, task)
-
+                date_tasks = self.filter_date_tasks_by_task(self.date_tasks, task_id)
                 if num_eligible > len(date_tasks):
                     # we have an abundance everyone should go at most once
                     self.prob += (
-                        lpSum(
-                            self.x[(date_task.task_id, user)]
-                            for date_task in date_tasks
-                        )
+                        lpSum(self.x[(date_task, user)] for date_task in date_tasks)
                         <= 1
                     )
                 else:
                     # Some may repeat, but no one should repeat more than one more than the other people
                     self.prob += (
-                        lpSum(
-                            self.x[(date_task.task_id, user)]
-                            for date_task in date_tasks
-                        )
+                        lpSum(self.x[(date_task, user)] for date_task in date_tasks)
                         <= (len(date_tasks) + num_eligible - 1) / num_eligible
                     )
                     # And everyone should get assigned at least once
                     self.prob += (
-                        lpSum(
-                            self.x[(date_task.task_id, user)]
-                            for date_task in date_tasks
-                        )
+                        lpSum(self.x[(date_task, user)] for date_task in date_tasks)
                         >= 1
                     )
+
+    def constrain_total_assignments(self):
+        for user in self.users:
+            self.prob += (
+                lpSum(
+                    self.x[(date_task, user)]
+                    for date_task in self.date_tasks
+                    if self.is_eligible(user, date_task)
+                )
+                <= self.max_assignments
+            )
 
     def constrain_month_boundary_assignments(self):
         """
@@ -293,7 +350,7 @@ class Scheduler:
                 if (
                     self.is_eligible(user, task_id)
                     # must check that there are enough people to go around
-                    and len(self.get_eligible[task_id]) >= 2
+                    and len(self.get_eligible(task_id)) >= 2
                 ):
                     for i, (earlier_date_task, later_date_task) in enumerate(
                         consec_date_task_pairs
@@ -309,7 +366,7 @@ class Scheduler:
                             ) <= 1
 
     def get_exclusions(self):
-        exclusions = {}
+        exclusions = set()
         for service in self.services:
             for task in service.tasks.all():
                 for exclusion in task.excludes.all():
@@ -317,19 +374,13 @@ class Scheduler:
 
         return exclusions
 
-    def is_eligible(self, user: User, task_id: str):
-        return user in self.eligibility[task_id]
-
-    def is_eligible(self, user: User, date_task: DateTask):
-        return user in self.eligibility[date_task.task_id]
-
     def week_aligned_date_task_pairs(self, task1: Task, task2: Task):
         """
         need to pad start to get weekly duties to align correctly
         otherwise we exclude tasks in different weeks
         """
-        date_tasks1 = self.filter_date_tasks_by_task(task1)
-        date_tasks2 = self.filter_date_tasks_by_task(task2)
+        date_tasks1 = self.filter_date_tasks_by_task(self.date_tasks, task1)
+        date_tasks2 = self.filter_date_tasks_by_task(self.date_tasks, task2)
 
         if len(date_tasks1) != len(date_tasks2):
             task1weekly = task1.service.day_of_week is None
@@ -352,9 +403,9 @@ class Scheduler:
         return zip_longest(date_tasks1, date_tasks2, fillvalue=0)
 
     def filter_date_tasks_by_task(
-        self, date_tasks: list[DateTask], task: Task
+        self, date_tasks: list[DateTask], task_id: str
     ) -> list[DateTask]:
-        return [date_task for date_task in date_tasks if date_task.task_id == task.id]
+        return [date_task for date_task in date_tasks if date_task.task_id == task_id]
 
     def get_tasks(self) -> list[Task]:
         tasks = []
@@ -388,17 +439,27 @@ class Scheduler:
                         #     f"{self.year}-{self.month}-{service_day}-{task.id}"
                         # )
                         date_tasks.append(
-                            Scheduler.DateTask(
+                            self.DateTask(
                                 f"{self.year}-{self.month}-{service_day}", task
                             )
                         )
         return date_tasks
 
-    def get_eligible(self, task_id: str):
-        return self.eligibility[task_id]
+    def get_eligible(self, task_id_or_task: str | Task):
+        if isinstance(task_id_or_task, str):
+            return self.eligibility[task_id_or_task]
+        elif isinstance(task_id_or_task, Task):
+            return self.eligibility[task_id_or_task.id]
+        else:
+            raise TypeError("task_id_or_task must be str or Task")
 
-    def get_eligible(self, task: Task):
-        return self.eligibility[task.id]
+    def is_eligible(self, user: User, task_id_or_date_task: str | DateTask):
+        if isinstance(task_id_or_date_task, str):
+            return user in self.eligibility[task_id_or_date_task]
+        elif isinstance(task_id_or_date_task, self.DateTask):
+            return user in self.eligibility[task_id_or_date_task.task_id]
+        else:
+            raise TypeError("task_or_date_task must be str or DateTask")
 
     def get_eligiblity(self):
         """

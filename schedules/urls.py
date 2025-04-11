@@ -8,4 +8,9 @@ urlpatterns = [
     path("", views.MonthListView.as_view(), name="index"),
     path("<int:id>/", views.MonthView.as_view(), name="month_view"),
     path("create/", views.create_schedule, name="create_schedule"),
+    path(
+        "<int:id>/generate",
+        views.generate_schedule_assignments,
+        name="generate_assignments",
+    ),
 ]

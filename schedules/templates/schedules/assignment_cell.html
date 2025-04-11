@@ -4,7 +4,7 @@
         {% if user %}
             <input class="assignment-input keep-datalist" type="text" list="{{task.id}}" value="{{user.last_name}}, {{ user.first_name }}">
         {% else %}
-            <input class="keep-datalist" type="text" list="{{task.id}}" value="">
+            <input class="assignment-input keep-datalist" type="text" list="{{task.id}}" value="">
         {% endif %}
         <div style="position: absolute; display: flex; right: 5px; bottom: 1px;">
         </div>

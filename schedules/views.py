@@ -1,13 +1,15 @@
 from collections import defaultdict
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.urls import reverse
 from django.views import generic
 from django.shortcuts import get_object_or_404, render
 from schedules.models import Assignment, AssignmentStats, Schedule, Service
+from schedules.services.scheduler import Scheduler
 from schedules.utils import (
     get_month_calendar,
     get_service_weeks,
 )
+from django.views.decorators.csrf import csrf_exempt
 
 
 class MonthView(generic.View):
@@ -91,6 +93,20 @@ class MonthListView(generic.ListView):
 
     def get_queryset(self):
         return Schedule.objects.all().order_by("-date")
+
+
+@csrf_exempt
+def generate_schedule_assignments(request, id):
+    if request.method == "POST":
+        schedule = Schedule.objects.get(id=id)
+        services = Service.objects.prefetch_related(
+            "tasks__users_with_preferences", "tasks__excludes"
+        ).all()
+
+        scheduler = Scheduler(schedule, services)
+        result, assignment_map = scheduler.solve()
+
+        return JsonResponse({"result": result, "assignment_map": assignment_map})
 
 
 def create_schedule(request):

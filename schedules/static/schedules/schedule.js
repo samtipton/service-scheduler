@@ -23,6 +23,48 @@ document.addEventListener("DOMContentLoaded", (event) => {
         this.toastTimer = null;
       }, 1000);
     }
+
+    async function generateAssignments() {
+      await fetch(`generate`, {
+        method: "POST",
+      }).then((res) => {
+        console.log(res);
+      showToast("Done.");
+        return res.json().then(data => {
+          const assignmentMap = data.assignment_map;
+          
+          // For each assignment in the response
+          for (const [dutyKey, assigneeName] of Object.entries(assignmentMap)) {
+            // Find the corresponding duty cell
+            const dutyCells = document.querySelectorAll(`td.duty-cell[data-duty="${dutyKey}"]`);
+            // Update each matching cell
+            dutyCells.forEach(cell => {
+              const input = cell.querySelector('input.assignment-input');
+              if (input) {
+                input.setAttribute("value", assigneeName);
+                input.setAttribute("placeholder", assigneeName);
+              }
+              else {
+                console.log(`No input found for duty cell ${dutyKey}`);
+              }
+              updateAssignedCount();
+            });
+          }
+          
+          showToast("Assignments loaded");
+        }).catch(error => {
+          console.error("Error parsing assignment data:", error);
+          showToast("Error loading assignments");
+        });
+      });
+      showToast("Generating assignments...");
+
+      // show skeleton in empty cells
+      // const emptyCells = document.querySelectorAll("td.duty-cell");
+      // emptyCells.forEach((cell) => {
+      //   cell.innerHTML = "<div class='skeleton'></div>";
+      // });
+    }
   
     async function commit() {
       await fetch("/commit", {
@@ -260,6 +302,8 @@ document.addEventListener("DOMContentLoaded", (event) => {
       toggleAssignmentCountVisibility;
   
     document.getElementById("commit-schedule").onclick = commit;
+
+    document.getElementById("generate-assignments").onclick = generateAssignments;
   
     function setupInputEventListeners(input) {
       input.addEventListener("change", function (e) {
