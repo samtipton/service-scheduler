@@ -1,4 +1,5 @@
 from collections import defaultdict
+import json
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.urls import reverse
 from django.views import generic
@@ -103,7 +104,10 @@ def generate_schedule_assignments(request, id):
             "tasks__users_with_preferences", "tasks__excludes"
         ).all()
 
-        scheduler = Scheduler(schedule, services)
+        # parse results from schedule and send to generate
+        assignment_map = json.loads(request.body) or {}
+
+        scheduler = Scheduler(schedule, services, assignment_map)
         result, assignment_map = scheduler.solve()
 
         return JsonResponse({"result": result, "assignment_map": assignment_map})

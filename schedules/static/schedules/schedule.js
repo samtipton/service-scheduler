@@ -24,15 +24,31 @@ document.addEventListener("DOMContentLoaded", (event) => {
       }, 1000);
     }
 
+    // TODO break functions into other files
     async function generateAssignments() {
       await fetch(`generate`, {
         method: "POST",
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(
+          // parse results from schedule and send to generate
+          Array.from(document.querySelectorAll('td.duty-cell'))
+            .reduce((obj, cell) => {
+              const input = cell.querySelector('input.assignment-input');
+              if (input && input.value && cell.dataset.duty) {
+                obj[cell.dataset.duty] = input.value;
+              }
+              return obj;
+            }, {})
+        ),
       }).then((res) => {
         console.log(res);
       showToast("Done.");
         return res.json().then(data => {
           const assignmentMap = data.assignment_map;
           
+          // parse results into schedule
           // For each assignment in the response
           for (const [dutyKey, assigneeName] of Object.entries(assignmentMap)) {
             // Find the corresponding duty cell
@@ -41,7 +57,11 @@ document.addEventListener("DOMContentLoaded", (event) => {
             dutyCells.forEach(cell => {
               const input = cell.querySelector('input.assignment-input');
               if (input) {
+                // update both value and placeholder
+                // yes I need to do this twice to update both javascript and html
+                input.value = assigneeName;
                 input.setAttribute("value", assigneeName);
+                input.placeholder = assigneeName;
                 input.setAttribute("placeholder", assigneeName);
               }
               else {
@@ -241,7 +261,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     function filerOnValueOrPlaceholder(el, value) {
       let placeholder = el.getAttribute("placeholder");
       return (
-        el.value.trim() == value || (placeholder && placeholder.trim() == value)
+        (el.value != "" || el.placeholder != "" ) && el.value.trim() == value || (placeholder && placeholder.trim() == value)
       );
     }
   

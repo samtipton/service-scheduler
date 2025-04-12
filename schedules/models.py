@@ -221,7 +221,7 @@ class Assignment(models.Model):
         Schedule,
         on_delete=models.CASCADE,
         related_name="assignments",
-        null=True,  # Allow null for backward compatibility
+        null=True,
         blank=True,
         db_index=True,
     )

@@ -1,10 +1,9 @@
 from collections import OrderedDict, defaultdict
 from datetime import datetime, timedelta
-from decimal import Decimal
 from itertools import chain, zip_longest
-import math
 from django.contrib.auth import get_user_model
 from schedules.models import AssignmentStats, Schedule, Service, Task, TaskPreference
+from schedules.services.datetask import DateTask
 from schedules.utils import (
     get_service_day,
     get_month_calendar,
@@ -16,30 +15,15 @@ from pulp import LpVariable, LpProblem, LpMaximize, lpSum, PULP_CBC_CMD, LpStatu
 
 
 class Scheduler:
-    class DateTask:
-        def __init__(self, date: str, task: Task):
-            self.date = date
-            if type(task) != Task:
-                raise ValueError("task must be a Task object")
-            self.task = task
-
-        @property
-        def task_id(self):
-            return self.task.id
-
-        @property
-        def day_of_week(self):
-            return self.task.service.day_of_week
-
-        def __str__(self):
-            return f"{self.date}-{self.task_id}"
 
     def __init__(
         self,
         schedule: Schedule,
         services: list[Service],
+        provided_assignments: dict[str, str] = {},
     ):
         # TODO optimize queries
+        # TODO clean up this setup into functions, pass in member variables instead of referencing self
         self.max_assignments = 5
         self.year = schedule.date.year
         self.month = schedule.date.month
@@ -50,8 +34,33 @@ class Scheduler:
         self.users = get_user_model().objects.all()
         self.service_days = {service.day_of_week for service in services}
         self.service_weeks = get_service_weeks(self.month_calendar, self.service_days)
-        self.tasks = self.get_tasks()
         self.date_tasks = self.get_date_tasks()
+
+        self.provided_assignment_vars = []
+        if provided_assignments:
+            self.users_by_inverted_name = {
+                user.inverted_name(): user for user in self.users
+            }
+            self.provided_assignment_vars = [
+                (
+                    DateTask.from_str(date_task_str),
+                    self.users_by_inverted_name[user_name],
+                )
+                for date_task_str, user_name in provided_assignments.items()
+            ]
+
+        # Validate provided date tasks
+        for date_task, _ in self.provided_assignment_vars:
+            if date_task not in set(self.date_tasks):
+                raise ValueError(f"date_task {date_task} not found in date_tasks")
+
+        # optionally if len(provided_date_tasks) == len(date_tasks) we could return here
+        # maybe we should handle on frontend
+        # if len(self.provided_assignment_vars) == len(self.date_tasks):
+        #     print("provided assignments cover all date tasks")
+        #     # but what to return? Flip a boolean to indicate that provided assignments were used
+
+        self.tasks = self.get_tasks()
         self.task_exclusions = self.get_exclusions()
         self.eligibility = self.get_eligiblity()
 
@@ -88,21 +97,23 @@ class Scheduler:
         self.base_assignments_dict = {}
         for assignment in self.base_assignments:
             date_str = assignment.assigned_at.strftime("%Y-%m-%d")
-            date_task = self.DateTask(date_str, assignment.task)
+            date_task = DateTask(date_str, assignment.task)
             self.base_assignments_dict[date_task] = assignment.user
 
             # Create DateTask for each assignment
             self.base_date_tasks.append((date_task, assignment.user))
 
         self.assignment_vars = list(
-            chain(
-                (
-                    (date_task, user)
-                    for user in self.users
-                    for date_task in self.date_tasks
-                    if self.is_eligible(user, date_task)
-                ),
-                self.base_date_tasks,
+            set(
+                chain(
+                    (
+                        (date_task, user)
+                        for user in self.users
+                        for date_task in self.date_tasks
+                        if self.is_eligible(user, date_task)
+                    ),
+                    self.base_date_tasks,  # previous month assignments
+                )
             )
         )
 
@@ -123,6 +134,7 @@ class Scheduler:
         self.constrain_do_not_over_assign_same_task()
         self.constrain_month_boundary_assignments()
         self.constrain_total_assignments()
+        self.constrain_provided_assignments()
 
     def solve(self, verbose: bool = False) -> tuple[any, dict[str, str]]:
         result = self.prob.solve(PULP_CBC_CMD(msg=verbose))
@@ -304,6 +316,10 @@ class Scheduler:
                 <= self.max_assignments
             )
 
+    def constrain_provided_assignments(self):
+        for date_task, user in self.provided_assignment_vars:
+            self.prob += self.x[(date_task, user)] == 1
+
     def constrain_month_boundary_assignments(self):
         """
         do not double assign person in next week if there are multiple choices
@@ -311,7 +327,7 @@ class Scheduler:
         """
         today = datetime(self.year, self.month, 1)
         first_of_month = today.replace(day=1)
-        last_week_prev_month = first_of_month - timedelta(days=1)
+        last_week_prev_month = first_of_month - timedelta(days=7)
 
         filtered_assignments = {}
         for date_task, assigned in self.assignment_vars:
@@ -435,13 +451,8 @@ class Scheduler:
                         service_week, self.service_days, service.day_of_week
                     )
                     if service_day and service_day != 0:
-                        # date_tasks.append(
-                        #     f"{self.year}-{self.month}-{service_day}-{task.id}"
-                        # )
                         date_tasks.append(
-                            self.DateTask(
-                                f"{self.year}-{self.month}-{service_day}", task
-                            )
+                            DateTask(f"{self.year}-{self.month}-{service_day}", task)
                         )
         return date_tasks
 
@@ -450,16 +461,12 @@ class Scheduler:
             return self.eligibility[task_id_or_task]
         elif isinstance(task_id_or_task, Task):
             return self.eligibility[task_id_or_task.id]
-        else:
-            raise TypeError("task_id_or_task must be str or Task")
 
     def is_eligible(self, user: User, task_id_or_date_task: str | DateTask):
         if isinstance(task_id_or_date_task, str):
             return user in self.eligibility[task_id_or_date_task]
-        elif isinstance(task_id_or_date_task, self.DateTask):
+        elif isinstance(task_id_or_date_task, DateTask):
             return user in self.eligibility[task_id_or_date_task.task_id]
-        else:
-            raise TypeError("task_or_date_task must be str or DateTask")
 
     def get_eligiblity(self):
         """
