@@ -117,6 +117,7 @@ def generate_schedule_assignments(request, id):
 
         scheduler = Scheduler(schedule, services, assignment_map)
         result, assignment_map = scheduler.solve()
+        # todo could create Assingments here, see save_schedule, use async
 
         return JsonResponse({"result": result, "assignment_map": assignment_map})
 

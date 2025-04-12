@@ -36,6 +36,20 @@ document.addEventListener("DOMContentLoaded", (event) => {
     }
     // TODO break functions into other files
     async function generateAssignments() {
+      // Show skeletons in empty cells
+      const emptyCells = document.querySelectorAll('td.duty-cell');
+      emptyCells.forEach((cell) => {
+        const input = cell.querySelector('input.assignment-input');
+        if (input && !input.value) {
+          const skeleton = cell.querySelector('.skeleton') || document.createElement('div');
+          skeleton.className = 'skeleton visible';
+          if (!cell.querySelector('.skeleton')) {
+            cell.appendChild(skeleton);
+          }
+          input.style.display = 'none';
+        }
+      });
+
       await fetch(`generate`, {
         method: "POST",
         headers: {
@@ -46,21 +60,25 @@ document.addEventListener("DOMContentLoaded", (event) => {
         ),
       }).then((res) => {
         console.log(res);
-      showToast("Done.");
+        showToast("Done.");
         return res.json().then(data => {
           const assignmentMap = data.assignment_map;
           
+          // Hide all skeletons and show inputs
+          document.querySelectorAll('.skeleton').forEach(skeleton => {
+            skeleton.classList.remove('visible');
+            const input = skeleton.parentElement.querySelector('input.assignment-input');
+            if (input) {
+              input.style.display = '';
+            }
+          });
+          
           // parse results into schedule
-          // For each assignment in the response
           for (const [dutyKey, assigneeName] of Object.entries(assignmentMap)) {
-            // Find the corresponding duty cell
             const dutyCells = document.querySelectorAll(`td.duty-cell[data-duty="${dutyKey}"]`);
-            // Update each matching cell
             dutyCells.forEach(cell => {
               const input = cell.querySelector('input.assignment-input');
               if (input) {
-                // update both value and placeholder
-                // yes I need to do this twice to update both javascript and html
                 input.value = assigneeName;
                 input.setAttribute("value", assigneeName);
                 input.placeholder = assigneeName;
@@ -76,17 +94,19 @@ document.addEventListener("DOMContentLoaded", (event) => {
           showToast("Assignments loaded");
           saveAfterDelay();
         }).catch(error => {
+          // Hide skeletons and show inputs on error
+          document.querySelectorAll('.skeleton').forEach(skeleton => {
+            skeleton.classList.remove('visible');
+            const input = skeleton.parentElement.querySelector('input.assignment-input');
+            if (input) {
+              input.style.display = '';
+            }
+          });
           console.error("Error parsing assignment data:", error);
           showToast("Error loading assignments");
         });
       });
       showToast("Generating assignments...");
-
-      // show skeleton in empty cells
-      // const emptyCells = document.querySelectorAll("td.duty-cell");
-      // emptyCells.forEach((cell) => {
-      //   cell.innerHTML = "<div class='skeleton'></div>";
-      // });
     }
   
     async function clear() {

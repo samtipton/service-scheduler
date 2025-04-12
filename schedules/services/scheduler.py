@@ -24,14 +24,14 @@ class Scheduler:
     ):
         # TODO optimize queries
         # TODO clean up this setup into functions, pass in member variables instead of referencing self
-        self.max_assignments = 5
+        self.max_assignments = 7
         self.year = schedule.date.year
         self.month = schedule.date.month
         self.services = services
         self.month_calendar, self.month_name = get_month_calendar(self.year, self.month)
 
         # TODO filter by group
-        self.users = get_user_model().objects.all()
+        self.users = get_user_model().objects.filter(is_active=True)
         self.service_days = {service.day_of_week for service in services}
         self.service_weeks = get_service_weeks(self.month_calendar, self.service_days)
         self.date_tasks = self.get_date_tasks()
