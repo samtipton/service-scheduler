@@ -24,6 +24,16 @@ document.addEventListener("DOMContentLoaded", (event) => {
       }, 1000);
     }
 
+    function collectAssignments() {
+          return Array.from(document.querySelectorAll('td.duty-cell'))
+            .reduce((obj, cell) => {
+              const input = cell.querySelector('input.assignment-input');
+              if (input && input.value && cell.dataset.duty) {
+                obj[cell.dataset.duty] = input.value;
+              }
+              return obj;
+            }, {})
+    }
     // TODO break functions into other files
     async function generateAssignments() {
       await fetch(`generate`, {
@@ -32,15 +42,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(
-          // parse results from schedule and send to generate
-          Array.from(document.querySelectorAll('td.duty-cell'))
-            .reduce((obj, cell) => {
-              const input = cell.querySelector('input.assignment-input');
-              if (input && input.value && cell.dataset.duty) {
-                obj[cell.dataset.duty] = input.value;
-              }
-              return obj;
-            }, {})
+          collectAssignments()
         ),
       }).then((res) => {
         console.log(res);
@@ -72,6 +74,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
           }
           
           showToast("Assignments loaded");
+          saveAfterDelay();
         }).catch(error => {
           console.error("Error parsing assignment data:", error);
           showToast("Error loading assignments");
@@ -86,15 +89,23 @@ document.addEventListener("DOMContentLoaded", (event) => {
       // });
     }
   
-    async function commit() {
-      await fetch("/commit", {
-        method: "PUT",
+    async function clear() {
+      await fetch("clear", {
+        method: "DELETE",
       }).then((res) => {
         if (res.status === 200 || res.status === 304) {
-          setTimeout(() => showToast("Committed"), 1000);
+          setTimeout(() => showToast("Done."), 1000);
+          // get all assignments and clear them
+          const assignments = document.querySelectorAll("input.assignment-input");
+          assignments.forEach((assignment) => {
+            assignment.value = "";
+            assignment.setAttribute("value", "");
+            assignment.placeholder = "";
+            assignment.setAttribute("placeholder", "");
+          });
         }
       });
-      showToast("Committing...");
+      showToast("Clearing assignments...");
     }
   
     function saveAfterDelay() {
@@ -104,10 +115,13 @@ document.addEventListener("DOMContentLoaded", (event) => {
       }
   
       this.saveTimer = setTimeout(async function () {
-        await fetch("/save", {
-          method: "POST",
-          body: document.documentElement.innerHTML,
-        }).then((res) => {
+        await fetch("save", {
+        method: "PUT",
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(collectAssignments()),
+      }).then((res) => {
           if (res.status === 204) {
             showToast("Saved");
             updateAssignedCount();
@@ -321,7 +335,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     document.getElementById("toggle-assignment-count").onclick =
       toggleAssignmentCountVisibility;
   
-    document.getElementById("commit-schedule").onclick = commit;
+    document.getElementById("clear-schedule").onclick = clear;
 
     document.getElementById("generate-assignments").onclick = generateAssignments;
   

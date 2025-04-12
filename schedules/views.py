@@ -1,10 +1,13 @@
 from collections import defaultdict
 import json
+from datetime import datetime
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.urls import reverse
+from django.utils import timezone
 from django.views import generic
 from django.shortcuts import get_object_or_404, render
-from schedules.models import Assignment, AssignmentStats, Schedule, Service
+from django.contrib.auth import get_user_model
+from schedules.models import Assignment, AssignmentStats, Schedule, Service, Task
 from schedules.services.scheduler import Scheduler
 from schedules.utils import (
     get_month_calendar,
@@ -111,6 +114,72 @@ def generate_schedule_assignments(request, id):
         result, assignment_map = scheduler.solve()
 
         return JsonResponse({"result": result, "assignment_map": assignment_map})
+
+
+@csrf_exempt
+def save_schedule(request, id):
+    """save assignments to database"""
+    if request.method == "PUT":
+        assignment_map = json.loads(request.body) or {}
+        schedule = Schedule.objects.get(id=id)
+        print(f"save schedule: {schedule.name} id:{id}")
+        if not schedule:
+            print("schedule not found")
+            return JsonResponse({"success": False, "error": "Schedule not found"})
+
+        if assignment_map:
+            # extract first names and last names from assignment map
+            first_names = []
+            last_names = []
+            for user_name_inverted in assignment_map.values():
+                first_names.append(user_name_inverted.split(", ")[1])
+                last_names.append(user_name_inverted.split(", ")[0])
+            # get users in batch, create map of user inverted name to user
+            users = get_user_model().objects.filter(
+                first_name__in=first_names, last_name__in=last_names
+            )
+            user_map = {user.inverted_name(): user for user in users}
+
+            # get tasks in batch, create map of task id to task
+            # TODO add schedule to service
+            # TODO get tasks from schedule's services
+            tasks = Task.objects.all()
+            task_map = {task.id: task for task in tasks}
+
+            for date_task_str, user_name_inverted in assignment_map.items():
+                date_and_task_id = date_task_str.rsplit("-", 1)
+                task_id = date_and_task_id[1]
+                date_str = date_and_task_id[0]
+                user = user_map[user_name_inverted]
+                task = task_map[task_id]
+                date = datetime.strptime(date_str, "%Y-%m-%d").replace(
+                    tzinfo=timezone.get_current_timezone()
+                )
+                assignment, created = Assignment.objects.update_or_create(
+                    schedule=schedule,
+                    task=task,
+                    assigned_at=date,
+                    defaults={"user": user},
+                )
+                if created:
+                    print(f"created assignment {assignment}")
+                else:
+                    print(f"updated assignment {assignment}")
+
+        return JsonResponse({"success": True})
+    return JsonResponse({"success": False}, status=405)
+
+
+@csrf_exempt
+def clear_schedule(request, id):
+    """commit assignments to database"""
+    if request.method == "DELETE":
+        print("clear schedule")
+        # get schedule and delete all assignments
+        schedule = Schedule.objects.get(id=id)
+        schedule.assignments.all().delete()
+        return JsonResponse({"success": True})
+    return JsonResponse({"success": False}, status=405)
 
 
 def create_schedule(request):

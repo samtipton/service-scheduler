@@ -13,4 +13,6 @@ urlpatterns = [
         views.generate_schedule_assignments,
         name="generate_assignments",
     ),
+    path("<int:id>/clear", views.clear_schedule, name="clear_schedule"),
+    path("<int:id>/save", views.save_schedule, name="save_schedule"),
 ]

@@ -124,6 +124,8 @@ class Service(models.Model):
     # TODO add groups
     # group = models.ForeignKey(Group, on_delete=models.RESTRICT)
 
+    # TODO add schedule
+
     class Meta:
         ordering = [
             # Put services with None day_of_week at the end
