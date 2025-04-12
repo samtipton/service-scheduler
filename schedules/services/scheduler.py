@@ -307,13 +307,45 @@ class Scheduler:
 
     def constrain_total_assignments(self):
         for user in self.users:
+            # Calculate the user's average assignment delta across all tasks
+            total_delta = 0
+            task_count = 0
+
+            for task in self.tasks:
+                if (
+                    user.pk in self.user_task_stats
+                    and task.id in self.user_task_stats[user.pk]
+                ):
+                    stat = self.user_task_stats[user.pk][task.id]
+                    # Only penalize positive deltas (over-assignment)
+                    # Negative deltas (under-assignment) will be treated as 0
+                    delta = max(0, float(stat.assignment_delta))
+                    total_delta += delta
+                    task_count += 1
+
+            # Calculate average delta (0 if no tasks)
+            avg_delta = total_delta / task_count if task_count > 0 else 0
+
+            # Scale the maximum assignments based on the delta
+            # If delta is large (over-assigned), they get fewer assignments
+            # If delta is small or negative (under-assigned), they get more assignments
+            # We'll use a sigmoid-like function to scale between 1 and 5 assignments
+            # The scaling factor will be between 0.2 and 1.0
+            scaling_factor = 1.0 / (1.0 + avg_delta)
+            scaled_max_assignments = max(
+                1, min(5, int(self.max_assignments * scaling_factor))
+            )
+            print(
+                f"max assignments for {user.inverted_name()}: {scaled_max_assignments}"
+            )
+
             self.prob += (
                 lpSum(
                     self.x[(date_task, user)]
                     for date_task in self.date_tasks
                     if self.is_eligible(user, date_task)
                 )
-                <= self.max_assignments
+                <= scaled_max_assignments
             )
 
     def constrain_provided_assignments(self):

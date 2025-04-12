@@ -90,6 +90,10 @@ document.addEventListener("DOMContentLoaded", (event) => {
     }
   
     async function clear() {
+      if (!confirm("Are you sure you want to clear all assignments in this schedule? This action cannot be undone.")) {
+        return;
+      }
+
       await fetch("clear", {
         method: "DELETE",
       }).then((res) => {
@@ -329,15 +333,18 @@ document.addEventListener("DOMContentLoaded", (event) => {
     });
   
     document.getElementById("download-pdf").onclick = async function () {
-      window.location = "/pdf";
+      window.location = "pdf";
     };
   
+    // document.getElementById("download-pdf").onclick = pdf;
+
     document.getElementById("toggle-assignment-count").onclick =
       toggleAssignmentCountVisibility;
   
     document.getElementById("clear-schedule").onclick = clear;
 
     document.getElementById("generate-assignments").onclick = generateAssignments;
+
   
     function setupInputEventListeners(input) {
       input.addEventListener("change", function (e) {

@@ -15,4 +15,5 @@ urlpatterns = [
     ),
     path("<int:id>/clear", views.clear_schedule, name="clear_schedule"),
     path("<int:id>/save", views.save_schedule, name="save_schedule"),
+    path("<int:id>/pdf", views.pdf, name="pdf"),
 ]

@@ -1,5 +1,6 @@
 from collections import defaultdict
 import json
+import pdfkit
 from datetime import datetime
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.urls import reverse
@@ -7,6 +8,7 @@ from django.utils import timezone
 from django.views import generic
 from django.shortcuts import get_object_or_404, render
 from django.contrib.auth import get_user_model
+from config.settings import BASE_DIR
 from schedules.models import Assignment, AssignmentStats, Schedule, Service, Task
 from schedules.services.scheduler import Scheduler
 from schedules.utils import (
@@ -14,6 +16,8 @@ from schedules.utils import (
     get_service_weeks,
 )
 from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
+import os
 
 
 class MonthView(generic.View):
@@ -99,6 +103,7 @@ class MonthListView(generic.ListView):
         return Schedule.objects.all().order_by("-date")
 
 
+# TODO add csrf
 @csrf_exempt
 def generate_schedule_assignments(request, id):
     if request.method == "POST":
@@ -116,13 +121,13 @@ def generate_schedule_assignments(request, id):
         return JsonResponse({"result": result, "assignment_map": assignment_map})
 
 
+# TODO add csrf
 @csrf_exempt
 def save_schedule(request, id):
     """save assignments to database"""
     if request.method == "PUT":
         assignment_map = json.loads(request.body) or {}
         schedule = Schedule.objects.get(id=id)
-        print(f"save schedule: {schedule.name} id:{id}")
         if not schedule:
             print("schedule not found")
             return JsonResponse({"success": False, "error": "Schedule not found"})
@@ -141,7 +146,7 @@ def save_schedule(request, id):
             user_map = {user.inverted_name(): user for user in users}
 
             # get tasks in batch, create map of task id to task
-            # TODO add schedule to service
+            # TODO add schedule to service model
             # TODO get tasks from schedule's services
             tasks = Task.objects.all()
             task_map = {task.id: task for task in tasks}
@@ -170,6 +175,112 @@ def save_schedule(request, id):
     return JsonResponse({"success": False}, status=405)
 
 
+# TODO move views into their own files
+@csrf_exempt
+def pdf(request, id):
+    if request.method == "GET":
+        schedule = Schedule.objects.get(id=id)
+
+        year = schedule.date.year
+        month = schedule.date.month
+        month_calendar, month_name = get_month_calendar(year, month)
+
+        # TODO consider moving these queries to ScheduleManager
+        # Prefetch related objects to minimize queries
+        # TODO ask about how reusable bits of view context are encapsulated in django
+
+        # TODO check if we can prefetch tasks here
+        services = Service.objects.all()
+
+        assignments = schedule.assignments.select_related(
+            "task", "user", "task__service"
+        )
+
+        service_days = {service.day_of_week for service in services}
+        service_weeks = get_service_weeks(month_calendar, service_days)
+
+        # Create a map of service_name to assignments for tasks in that service
+        service_assignments = defaultdict(dict)
+        for assignment in assignments:
+            assignment_key = (
+                f"{year}-{month}-{assignment.assigned_at.day}-{assignment.task.id}"
+            )
+            service_assignments[assignment.task.service.name][
+                assignment_key
+            ] = assignment.user
+
+        # Read the CSS file
+        app_static_dir = os.path.join(BASE_DIR, "schedules", "static", "schedules")
+        css_path = os.path.join(app_static_dir, "schedule.css")
+
+        if os.path.exists(css_path):
+            with open(css_path, "r") as f:
+                css_content = f.read()
+        else:
+            # Fallback to empty CSS if file not found
+            css_content = ""
+
+        context = {
+            "year": year,
+            "month": month,
+            "month_name": month_name,
+            "services": services,
+            "service_days": service_days,
+            "service_weeks": service_weeks,
+            "service_assignments": service_assignments,
+            "css_content": css_content,
+            "col_span": len(service_weeks) + len(service_weeks) + 1,
+        }
+        # instead of returning html, return pdf file using the rendered html
+        # may need to remove things from this template
+        html_content = render(
+            request, "schedules/pdf_month_schedule.html", context
+        ).content.decode("utf-8")
+        options = {
+            "page-size": "Legal",
+            "orientation": "Landscape",
+            # "margin-top": "0.5in",
+            # "margin-right": "0.5in",
+            # "margin-bottom": "0.5in",
+            # "margin-left": "0.5in",
+            "encoding": "UTF-8",
+            "no-outline": None,
+            "quiet": "",
+            "disable-external-links": "",
+            "disable-internal-links": "",
+            "enable-local-file-access": "",
+        }
+        pdf = pdfkit.from_string(html_content, False, options=options)
+
+        # return pdf as attachment, content-dipsosition attachment filename
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="schedule-{month}-{year}.pdf"'
+        )
+        response["Content-Length"] = len(pdf)
+        response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response["Pragma"] = "no-cache"
+        response["Expires"] = "0"
+
+        # Add X-Content-Type-Options to prevent MIME type sniffing
+        response["X-Content-Type-Options"] = "nosniff"
+
+        # If this is an AJAX request, we need to handle it differently
+        # Currently not requeseting with ajax,
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            # For AJAX requests, we'll return a JSON response with the PDF data
+            return JsonResponse(
+                {
+                    "pdf_data": pdf.decode("latin1"),
+                    "filename": f"schedule-{month}-{year}.pdf",
+                }
+            )
+
+        return response
+    return HttpResponse(status=405)
+
+
+# TODO add csrf
 @csrf_exempt
 def clear_schedule(request, id):
     """commit assignments to database"""

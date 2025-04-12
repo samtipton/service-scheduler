@@ -1,5 +1,6 @@
 * {
     box-sizing: border-box;
+    font-family: "Times New Roman", Times, serif;
   }
   
   table {
@@ -16,6 +17,8 @@
     font-size: 1.2em;
     padding: 4px;
     line-height: 24px;
+    height: 32px;
+    vertical-align: middle;
   }
   
   th.empty,
@@ -31,6 +34,9 @@
     font-size: 1.2em;
     font-weight: bold;
     text-align: left;
+    height: 32px;
+    line-height: 24px;
+    padding: 4px;
   }
   
   th.day {
@@ -45,6 +51,9 @@
   td.assignment {
     font-size: x-large;
     text-align: center;
+    height: 32px;
+    line-height: 24px;
+    padding: 4px;
   }
   
   .header {
@@ -161,6 +170,31 @@
   
   @media print {
     @page {
-      size: landscape;
+        size: landscape;
+        margin: 0.5in;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+    }
+
+    table {
+        width: 100%;
+        height: 100%;
+        border: 1px solid black;
+        border-collapse: collapse;
+    }
+
+    th,
+    td {
+        border: 1px solid black;
+        border-collapse: collapse;
+        width: 15%;
+        font-size: 1.2em;
+        padding: 4px;
+        line-height: 24px;
+        height: 32px;
+        vertical-align: middle;
     }
   }
