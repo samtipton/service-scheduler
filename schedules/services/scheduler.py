@@ -1,6 +1,7 @@
 from collections import OrderedDict, defaultdict
 from datetime import datetime, timedelta
 from itertools import chain, zip_longest
+import random
 from django.contrib.auth import get_user_model
 from schedules.models import AssignmentStats, Schedule, Service, Task, TaskPreference
 from schedules.services.datetask import DateTask
@@ -20,7 +21,7 @@ class Scheduler:
         self,
         schedule: Schedule,
         services: list[Service],
-        provided_assignments: dict[str, str] = {},
+        locked_in_assignments: dict[str, str] = {},
     ):
         # TODO optimize queries
         # TODO clean up this setup into functions, pass in member variables instead of referencing self
@@ -36,21 +37,26 @@ class Scheduler:
         self.service_weeks = get_service_weeks(self.month_calendar, self.service_days)
         self.date_tasks = self.get_date_tasks()
 
-        self.provided_assignment_vars = []
-        if provided_assignments:
+        self.locked_in_assignment_vars = []
+        if locked_in_assignments:
             self.users_by_inverted_name = {
                 user.inverted_name(): user for user in self.users
             }
-            self.provided_assignment_vars = [
+            self.locked_in_assignment_vars = [
                 (
                     DateTask.from_str(date_task_str),
                     self.users_by_inverted_name[user_name],
                 )
-                for date_task_str, user_name in provided_assignments.items()
+                for date_task_str, user_name in locked_in_assignments.items()
             ]
 
+        # print("date_tasks")
+        # print("\n".join([str(dt) for dt in self.date_tasks]))
+        # print("locked_in_assignment_vars")
+        # print("\n".join([str(dt) for dt in self.locked_in_assignment_vars]))
+
         # Validate provided date tasks
-        for date_task, _ in self.provided_assignment_vars:
+        for date_task, _ in self.locked_in_assignment_vars:
             if date_task not in set(self.date_tasks):
                 raise ValueError(f"date_task {date_task} not found in date_tasks")
 
@@ -74,6 +80,8 @@ class Scheduler:
         )
         for stat in self.assignment_stats:
             self.user_task_stats[stat.user.pk][stat.task.id] = stat
+        # print("user_task_stats")
+        # print(self.user_task_stats)
 
         # Dictionary of dictionaries for user -> task -> task_preference
         # TODO filter by group
@@ -211,12 +219,12 @@ class Scheduler:
         threshold_value = ideal * 0.05  # 5% of ideal
 
         if actual < threshold_value:
-            # Binary-like adjustment - either fully adjust or not
-            # For users below threshold, pull them 90% of the way to ideal
-            adjusted_actual = actual + (ideal - actual) * 0.9
-            # print(
-            #     f"pulling {actual} to {adjusted_actual} for {user.inverted_name()} {date_task.task_id}"
-            # )
+            # For users below threshold, pull them toward ideal with random variation
+            jitter_factor = 0.9 + random.uniform(
+                0, 0.2
+            )  # Random value between 0.9 and 1.1
+            adjusted_actual = actual + (ideal - actual) * jitter_factor
+
             self._adjusted_average_cache[cache_key] = adjusted_actual
             return adjusted_actual
 
@@ -238,7 +246,7 @@ class Scheduler:
             return 0
         if date_task.task_id not in self.user_task_stats[user.pk]:
             raise KeyError(
-                f"user {user.pk} does not have a task stat for task {date_task.task_id}"
+                f"user {user.pk} ({user.inverted_name()}) does not have a task stat for task {date_task.task_id}"
             )
         return self.user_task_stats[user.pk][date_task.task_id].ideal_average
 
@@ -285,8 +293,21 @@ class Scheduler:
             task_id = task.id
             eligible = self.get_eligible(task)
             num_eligible = len(eligible)
+
+            # Get locked assignments for this task
+            locked_assignments_for_task = {
+                user
+                for date_task, user in self.locked_in_assignment_vars
+                if date_task.task_id == task_id
+            }
+
             for user in eligible:
                 date_tasks = self.filter_date_tasks_by_task(self.date_tasks, task_id)
+
+                # Skip constraints for users with locked assignments for this task
+                if user in locked_assignments_for_task:
+                    continue
+
                 if num_eligible > len(date_tasks):
                     # we have an abundance everyone should go at most once
                     self.prob += (
@@ -307,49 +328,17 @@ class Scheduler:
 
     def constrain_total_assignments(self):
         for user in self.users:
-            # Calculate the user's average assignment delta across all tasks
-            total_delta = 0
-            task_count = 0
-
-            for task in self.tasks:
-                if (
-                    user.pk in self.user_task_stats
-                    and task.id in self.user_task_stats[user.pk]
-                ):
-                    stat = self.user_task_stats[user.pk][task.id]
-                    # Only penalize positive deltas (over-assignment)
-                    # Negative deltas (under-assignment) will be treated as 0
-                    delta = max(0, float(stat.assignment_delta))
-                    total_delta += delta
-                    task_count += 1
-
-            # Calculate average delta (0 if no tasks)
-            avg_delta = total_delta / task_count if task_count > 0 else 0
-
-            # Scale the maximum assignments based on the delta
-            # If delta is large (over-assigned), they get fewer assignments
-            # If delta is small or negative (under-assigned), they get more assignments
-            # We'll use a sigmoid-like function to scale between 1 and 5 assignments
-            # The scaling factor will be between 0.2 and 1.0
-            scaling_factor = 1.0 / (1.0 + avg_delta)
-            scaled_max_assignments = max(
-                1, min(5, int(self.max_assignments * scaling_factor))
-            )
-            print(
-                f"max assignments for {user.inverted_name()}: {scaled_max_assignments}"
-            )
-
             self.prob += (
                 lpSum(
                     self.x[(date_task, user)]
                     for date_task in self.date_tasks
                     if self.is_eligible(user, date_task)
                 )
-                <= scaled_max_assignments
+                <= self.max_assignments
             )
 
     def constrain_provided_assignments(self):
-        for date_task, user in self.provided_assignment_vars:
+        for date_task, user in self.locked_in_assignment_vars:
             self.prob += self.x[(date_task, user)] == 1
 
     def constrain_month_boundary_assignments(self):
@@ -393,8 +382,18 @@ class Scheduler:
 
         task_consec_pairs_dict = dict(task_consec_pairs_dict)
 
+        # Create a set of (task_id, user) pairs that are locked in
+        locked_task_user_pairs = {
+            (date_task.task_id, user)
+            for date_task, user in self.locked_in_assignment_vars
+        }
+
         for user in self.users:
             for task_id, consec_date_task_pairs in task_consec_pairs_dict.items():
+                # Skip constraints for this task-user combination if it's locked in
+                if (task_id, user) in locked_task_user_pairs:
+                    continue
+
                 if (
                     self.is_eligible(user, task_id)
                     # must check that there are enough people to go around
@@ -418,7 +417,7 @@ class Scheduler:
         for service in self.services:
             for task in service.tasks.all():
                 for exclusion in task.excludes.all():
-                    exclusions.add((task.id, exclusion.id))
+                    exclusions.add((task, exclusion))
 
         return exclusions
 
@@ -448,11 +447,15 @@ class Scheduler:
                 date_tasks1 = daily_date_tasks
                 date_tasks2 = weekly_date_tasks
 
+        pairs = list(zip_longest(date_tasks1, date_tasks2, fillvalue=0))
         return zip_longest(date_tasks1, date_tasks2, fillvalue=0)
 
     def filter_date_tasks_by_task(
-        self, date_tasks: list[DateTask], task_id: str
+        self, date_tasks: list[DateTask], task_id_or_task: str | Task
     ) -> list[DateTask]:
+        task_id = (
+            task_id_or_task.id if isinstance(task_id_or_task, Task) else task_id_or_task
+        )
         return [date_task for date_task in date_tasks if date_task.task_id == task_id]
 
     def get_tasks(self) -> list[Task]:
@@ -494,11 +497,16 @@ class Scheduler:
         elif isinstance(task_id_or_task, Task):
             return self.eligibility[task_id_or_task.id]
 
-    def is_eligible(self, user: User, task_id_or_date_task: str | DateTask):
+    def is_eligible(self, user: User, task_id_or_date_task: str | DateTask | Task):
         if isinstance(task_id_or_date_task, str):
             return user in self.eligibility[task_id_or_date_task]
         elif isinstance(task_id_or_date_task, DateTask):
             return user in self.eligibility[task_id_or_date_task.task_id]
+        elif isinstance(task_id_or_date_task, Task):
+            return user in self.eligibility[task_id_or_date_task.id]
+        raise TypeError(
+            f"Expected str, DateTask, or Task, got {type(task_id_or_date_task)}"
+        )
 
     def get_eligiblity(self):
         """

@@ -3,7 +3,6 @@ import json
 import pdfkit
 from datetime import datetime
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
-from django.urls import reverse
 from django.utils import timezone
 from django.views import generic
 from django.shortcuts import get_object_or_404, render
@@ -16,7 +15,6 @@ from schedules.utils import (
     get_service_weeks,
 )
 from django.views.decorators.csrf import csrf_exempt
-from django.conf import settings
 import os
 
 
@@ -113,66 +111,103 @@ def generate_schedule_assignments(request, id):
         ).all()
 
         # parse results from schedule and send to generate
+        # Could also take assignments from schedule itself
         assignment_map = json.loads(request.body) or {}
 
         scheduler = Scheduler(schedule, services, assignment_map)
         result, assignment_map = scheduler.solve()
-        # todo could create Assingments here, see save_schedule, use async
+        print(f"schedule result: {result}")
+
+        update_assignments_in_schedule(schedule, assignment_map)
 
         return JsonResponse({"result": result, "assignment_map": assignment_map})
 
 
+def update_assignments_in_schedule(schedule: Schedule, assignment_map: dict[str, str]):
+    """update assignments in database"""
+    # extract first names and last names from assignment map
+    first_names = []
+    last_names = []
+    assignment_to_delete = []
+
+    # filter out bad inputs:
+    for date_task_str, user_name_inverted in assignment_map.items():
+        if user_name_inverted is None:
+            assignment_to_delete.append(date_task_str)
+        elif "," not in user_name_inverted:
+            # TODO let frontend detect partial user  name input
+            # partial input save, let next save do update
+            del assignment_map[date_task_str]
+        else:
+            first_names.append(user_name_inverted.split(", ")[1])
+            last_names.append(user_name_inverted.split(", ")[0])
+
+    # get users in batch, create map of user inverted name to user
+    # TODO filter by group
+    # TODO there is a better way to do this
+    users = get_user_model().objects.filter(
+        first_name__in=first_names, last_name__in=last_names
+    )
+    user_map = {user.inverted_name(): user for user in users}
+
+    # get tasks in batch, create map of task id to task
+    # TODO add schedule to service model
+    # TODO get tasks from schedule's services
+    tasks = Task.objects.all()
+    task_map = {task.id: task for task in tasks}
+
+    for date_task_str in assignment_to_delete:
+        date_and_task_id = date_task_str.rsplit("-", 1)
+        date_str = date_and_task_id[0]
+        task_id = date_and_task_id[1]
+        task = task_map[task_id]
+        print(f"deleting assignment {date_task_str}")
+        Assignment.objects.filter(
+            schedule=schedule,
+            task=task,
+            assigned_at=datetime.strptime(date_str, "%Y-%m-%d").replace(
+                tzinfo=timezone.get_current_timezone()
+            ),
+        ).delete()
+
+    for date_task_str, user_name_inverted in assignment_map.items():
+        if user_name_inverted:
+            date_and_task_id = date_task_str.rsplit("-", 1)
+            task_id = date_and_task_id[1]
+            date_str = date_and_task_id[0]
+            user = user_map[user_name_inverted]
+            task = task_map[task_id]
+            date = datetime.strptime(date_str, "%Y-%m-%d").replace(
+                tzinfo=timezone.get_current_timezone()
+            )
+            assignment, created = Assignment.objects.update_or_create(
+                schedule=schedule,
+                task=task,
+                assigned_at=date,
+                defaults={"user": user},
+            )
+            # if created:
+            #     print(f"created assignment {assignment}")
+            # else:
+            #     print(f"updated assignment {assignment}")
+
+
 # TODO add csrf
 @csrf_exempt
-def save_schedule(request, id):
-    """save assignments to database"""
+def update_schedule(request, id):
+    """update assignments in database"""
     if request.method == "PUT":
         assignment_map = json.loads(request.body) or {}
         schedule = Schedule.objects.get(id=id)
+        print(f"update schedule: {assignment_map}")
         if not schedule:
             print("schedule not found")
             return JsonResponse({"success": False, "error": "Schedule not found"})
 
         if assignment_map:
-            # extract first names and last names from assignment map
-            first_names = []
-            last_names = []
-            for user_name_inverted in assignment_map.values():
-                first_names.append(user_name_inverted.split(", ")[1])
-                last_names.append(user_name_inverted.split(", ")[0])
-            # get users in batch, create map of user inverted name to user
-            users = get_user_model().objects.filter(
-                first_name__in=first_names, last_name__in=last_names
-            )
-            user_map = {user.inverted_name(): user for user in users}
+            update_assignments_in_schedule(schedule, assignment_map)
 
-            # get tasks in batch, create map of task id to task
-            # TODO add schedule to service model
-            # TODO get tasks from schedule's services
-            tasks = Task.objects.all()
-            task_map = {task.id: task for task in tasks}
-
-            for date_task_str, user_name_inverted in assignment_map.items():
-                date_and_task_id = date_task_str.rsplit("-", 1)
-                task_id = date_and_task_id[1]
-                date_str = date_and_task_id[0]
-                user = user_map[user_name_inverted]
-                task = task_map[task_id]
-                date = datetime.strptime(date_str, "%Y-%m-%d").replace(
-                    tzinfo=timezone.get_current_timezone()
-                )
-                assignment, created = Assignment.objects.update_or_create(
-                    schedule=schedule,
-                    task=task,
-                    assigned_at=date,
-                    defaults={"user": user},
-                )
-                if created:
-                    print(f"created assignment {assignment}")
-                else:
-                    print(f"updated assignment {assignment}")
-
-        return JsonResponse({"success": True})
+        return JsonResponse({"success": True}, status=204)
     return JsonResponse({"success": False}, status=405)
 
 
@@ -232,18 +267,12 @@ def pdf(request, id):
             "css_content": css_content,
             "col_span": len(service_weeks) + len(service_weeks) + 1,
         }
-        # instead of returning html, return pdf file using the rendered html
-        # may need to remove things from this template
         html_content = render(
             request, "schedules/pdf_month_schedule.html", context
         ).content.decode("utf-8")
         options = {
             "page-size": "Legal",
             "orientation": "Landscape",
-            # "margin-top": "0.5in",
-            # "margin-right": "0.5in",
-            # "margin-bottom": "0.5in",
-            # "margin-left": "0.5in",
             "encoding": "UTF-8",
             "no-outline": None,
             "quiet": "",
@@ -285,12 +314,17 @@ def pdf(request, id):
 @csrf_exempt
 def clear_schedule(request, id):
     """commit assignments to database"""
+
+    schedule = Schedule.objects.get(id=id)
     if request.method == "DELETE":
-        print("clear schedule")
-        # get schedule and delete all assignments
-        schedule = Schedule.objects.get(id=id)
-        schedule.assignments.all().delete()
-        return JsonResponse({"success": True})
+        # only allow the user who created the schedule to clear it
+        if request.user == schedule.user:
+            print("clear schedule")
+            # get schedule and delete all assignments
+            schedule.assignments.all().delete()
+            return JsonResponse({"success": True})
+        else:
+            return JsonResponse({"success": False, "error": "Unauthorized"}, status=403)
     return JsonResponse({"success": False}, status=405)
 
 
@@ -316,7 +350,7 @@ def create_schedule(request):
         )
 
         # Redirect to the schedule detail page
-        return HttpResponseRedirect(f"/schedules/{schedule.id}")
+        return HttpResponseRedirect(f"/schedules/{schedule.id}", status=303)
 
     # If not POST, redirect to the schedules page
     return HttpResponseRedirect("schedules:index")

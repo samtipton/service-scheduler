@@ -49,9 +49,6 @@ class Schedule(models.Model):
     )
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
-    draft = models.BooleanField(default=True)
-    # TODO add services?
-    # TODO add group
 
     # The base schedule this one builds upon (like a parent commit)
     base_schedule = models.ForeignKey(
@@ -80,19 +77,172 @@ class Schedule(models.Model):
 
     def select_as_official(self):
         """Select this schedule as the official one for its month/year"""
-
         month_start = date(self.date.year, self.date.month, 1)
         month_end = date(
             self.date.year + (self.date.month // 12), ((self.date.month % 12) + 1), 1
         ) - timedelta(days=1)
 
-        Schedule.objects.filter(
+        # Unselect any other official schedules for this month
+        # This ensures only one schedule is official per month, which is important for:
+        # 1. Maintaining a single source of truth for the month
+        # 2. Proper cleanup of stats (we know which stats to keep)
+        # 3. Other parts of the system that rely on knowing the current official schedule
+        other_official_schedules = Schedule.objects.filter(
             date__gte=month_start, date__lte=month_end, is_official=True
-        ).update(is_official=False)
+        ).exclude(id=self.id)
+        other_official_schedules.update(is_official=False)
 
-        # Then mark this one as selected
+        # Then mark this one as selected and generate stats
         self.is_official = True
-        self.save()
+        self.save()  # This will trigger generate_assignment_stats if needed
+
+    def generate_assignment_stats(self):
+        """Generate assignment stats for this schedule.
+        For user/task combinations with assignments in this schedule, create new stats.
+        For all other combinations, reuse the latest existing stats.
+        Only creates stats for users who have assignments or preferences.
+        """
+        # Clean up old stats before creating new ones
+        self._cleanup_old_stats()
+
+        # Get all user/task combinations that have assignments in this schedule
+        schedule_assignments = set(
+            Assignment.objects.filter(schedule=self)
+            .values_list("user_id", "task_id")
+            .distinct()
+        )
+        print(f"Found {len(schedule_assignments)} assignments in this schedule")
+
+        # Get users who have assignments in this schedule
+        users_with_assignments = (
+            get_user_model().objects.filter(past_assignments__schedule=self).distinct()
+        )
+        print(f"Found {users_with_assignments.count()} users with assignments")
+
+        # Get users who have preferences
+        users_with_preferences = (
+            get_user_model()
+            .objects.filter(taskpreference__value__gt=0, is_active=True)
+            .distinct()
+        )
+        print(f"Found {users_with_preferences.count()} users with preferences")
+
+        # Combine both sets of users
+        relevant_users = (users_with_assignments | users_with_preferences).distinct()
+        print(f"Total relevant users: {relevant_users.count()}")
+
+        # Get tasks that have preferences or assignments
+        relevant_tasks = Task.objects.filter(
+            models.Q(users_with_preferences__in=relevant_users)
+            | models.Q(assignment__schedule=self)
+        ).distinct()
+        print(f"Found {relevant_tasks.count()} relevant tasks")
+
+        # Get all existing stats for relevant user/task combinations in a single query
+        latest_stats = {
+            (stat.user_id, stat.task_id): stat
+            for stat in AssignmentStats.objects.filter(
+                user__in=relevant_users,
+                task__in=relevant_tasks,
+                # Only consider stats that are associated with official schedules
+                schedule__is_official=True,
+            )
+            .order_by("user_id", "task_id", "-created_at")
+            .distinct("user_id", "task_id")
+        }
+        print(f"Found {len(latest_stats)} existing stats to potentially reuse")
+
+        # Prepare lists for bulk operations
+        stats_to_create = []
+        stats_to_update = []
+        created_from_assignments = 0
+        created_from_preferences = 0
+        created_from_no_existing = 0
+
+        # Process only relevant user/task combinations
+        for user in relevant_users:
+            # Get tasks this user is eligible for (has preferences > 0)
+            user_tasks = Task.objects.filter(
+                users_with_preferences=user, taskpreference__value__gt=0
+            ).distinct()
+            print(
+                f"User {user.username} has {user_tasks.count()} tasks with preferences"
+            )
+
+            for task in user_tasks:
+                user_task_key = (user.id, task.id)
+
+                if user_task_key in schedule_assignments:
+                    # Create new stat for assignments in this schedule
+                    stats_to_create.append(
+                        AssignmentStats(
+                            user=user,
+                            task=task,
+                            ideal_average=0,  # Will be calculated on save
+                            actual_average=0,  # Will be calculated on save
+                            assignment_delta=0,  # Will be calculated on save
+                        )
+                    )
+                    created_from_assignments += 1
+                else:
+                    # Try to reuse latest stat
+                    latest_stat = latest_stats.get(user_task_key)
+                    if latest_stat:
+                        # Always reuse the latest stat if it exists
+                        stats_to_update.append(latest_stat)
+                    else:
+                        # Only create new stat if we have no existing stats AND this is an official schedule
+                        if self.is_official:
+                            stats_to_create.append(
+                                AssignmentStats(
+                                    user=user,
+                                    task=task,
+                                    ideal_average=0,  # Will be calculated on save
+                                    actual_average=0,  # Will be calculated on save
+                                    assignment_delta=0,  # Will be calculated on save
+                                )
+                            )
+                            created_from_no_existing += 1
+
+        # Bulk create new stats
+        if stats_to_create:
+            new_stats = AssignmentStats.objects.bulk_create(stats_to_create)
+            # Add schedule to all new stats
+            for stat in new_stats:
+                stat.schedule.add(self)
+            print(f"Created {len(new_stats)} new stats:")
+            print(f"  - {created_from_assignments} from assignments in this schedule")
+            print(f"  - {created_from_no_existing} from no existing stats")
+            print(
+                f"  - {len(new_stats) - created_from_assignments - created_from_no_existing} from other reasons"
+            )
+
+        # Add schedule to existing stats
+        if stats_to_update:
+            # Need to use add() for each stat since it's a ManyToManyField
+            for stat in stats_to_update:
+                if self not in stat.schedule.all():
+                    stat.schedule.add(self)
+            print(f"Updated {len(stats_to_update)} existing stats")
+
+    def _cleanup_old_stats(self):
+        """Clean up old assignment stats to prevent database bloat"""
+        self.assignment_stats.all().delete()
+
+    def force_recalculate_stats(self):
+        """Force recalculation of assignment stats for this schedule"""
+        self._cleanup_old_stats()
+        self.generate_assignment_stats()
+
+    def save(self, *args, **kwargs):
+        """Update statistics before saving"""
+        self.updated_at = timezone.now()
+
+        # If this is becoming official and has no stats yet, generate them
+        if self.is_official and self.assignment_stats.count() == 0:
+            self.generate_assignment_stats()
+
+        super().save(*args, **kwargs)
 
     # TODO this might make more sense then creating all assignments
     # and passing the schedule in, but we'll see. should definitely bulk insert if we can
@@ -108,10 +258,6 @@ class Schedule(models.Model):
     def get_assignments(self):
         """Get all assignments in this schedule"""
         return Assignment.objects.filter(schedule=self)
-
-    def save(self, *args, **kwargs):
-        self.updated_at = timezone.now()
-        super().save(*args, **kwargs)
 
 
 class Service(models.Model):
@@ -207,7 +353,7 @@ class Task(models.Model):
     def get_eligible_users(self):
         """Get all users who are eligible for this task"""
         return self.users_with_preferences.filter(
-            taskpreference__value__gt=0
+            taskpreference__value__gt=0, is_active=True
         ).distinct()
 
 
@@ -279,6 +425,7 @@ class AssignmentStats(models.Model):
         Task, on_delete=models.CASCADE, related_name="assignment_stats"
     )
 
+    # Is it possible to do this in admin?
     # snapshot of assignment stats at the time this schedule was last comitted
     schedule = models.ManyToManyField(Schedule, related_name="assignment_stats")
 

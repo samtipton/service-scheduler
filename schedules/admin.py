@@ -61,8 +61,13 @@ class AssignmentStatsAdmin(admin.ModelAdmin):
         "actual_average",
         "assignment_delta",
     )
-    search_fields = ("user__first_name", "user__last_name", "task__name")
-    list_filter = ("user", "task")
+    search_fields = (
+        "user__first_name",
+        "user__last_name",
+        "task__name",
+        "schedule",
+    )
+    list_filter = ("user", "task", "schedule")
 
     class Meta:
         verbose_name = "Assignment Stats"

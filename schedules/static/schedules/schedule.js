@@ -5,6 +5,8 @@ document.addEventListener("DOMContentLoaded", (event) => {
     var lastValue = "";
     var toastEl = document.getElementById("toast");
     var assignmentFreqMap = new Map();
+    var lastAssignments = {};  // Track last known assignments
+    collectChangedAssignments();
   
     function hideToast() {
       toastEl.style.opacity = "0.0";
@@ -34,6 +36,31 @@ document.addEventListener("DOMContentLoaded", (event) => {
               return obj;
             }, {})
     }
+
+    function collectChangedAssignments() {
+      const currentAssignments = collectAssignments();
+      const changedAssignments = {};
+      
+      // Find assignments that are new or changed
+      for (const [dutyKey, value] of Object.entries(currentAssignments)) {
+        if (lastAssignments[dutyKey] !== value) {
+          changedAssignments[dutyKey] = value;
+        }
+      }
+      
+      // Find assignments that were removed
+      for (const [dutyKey, value] of Object.entries(lastAssignments)) {
+        if (!(dutyKey in currentAssignments)) {
+          changedAssignments[dutyKey] = null;  // Use null to indicate removal
+        }
+      }
+      
+      // Update lastAssignments for next comparison
+      lastAssignments = {...currentAssignments};
+      
+      return changedAssignments;
+    }
+
     // TODO break functions into other files
     async function generateAssignments() {
       // Show skeletons in empty cells
@@ -90,9 +117,6 @@ document.addEventListener("DOMContentLoaded", (event) => {
               updateAssignedCount();
             });
           }
-          
-          showToast("Assignments loaded");
-          saveAfterDelay();
         }).catch(error => {
           // Hide skeletons and show inputs on error
           document.querySelectorAll('.skeleton').forEach(skeleton => {
@@ -106,7 +130,6 @@ document.addEventListener("DOMContentLoaded", (event) => {
           showToast("Error loading assignments");
         });
       });
-      showToast("Generating assignments...");
     }
   
     async function clear() {
@@ -133,19 +156,19 @@ document.addEventListener("DOMContentLoaded", (event) => {
     }
   
     function saveAfterDelay() {
-      if (this.saveTimer) {
+      if (saveTimer) {
         window.clearTimeout(saveTimer);
-        this.saveTimer = null;
+        saveTimer = null;
       }
   
-      this.saveTimer = setTimeout(async function () {
-        await fetch("save", {
-        method: "PUT",
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(collectAssignments()),
-      }).then((res) => {
+      saveTimer = setTimeout(async function () {
+        await fetch("update", {
+          method: "PUT",
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(collectChangedAssignments()),
+        }).then((res) => {
           if (res.status === 204) {
             showToast("Saved");
             updateAssignedCount();
@@ -386,6 +409,13 @@ document.addEventListener("DOMContentLoaded", (event) => {
           saveAfterDelay();
           clearHighlights();
         }
+      });
+      input.addEventListener("dblclick", function (e) {
+        e.target.value = "";
+        e.target.setAttribute("value", "");
+        e.target.setAttribute("placeholder", "");
+        saveAfterDelay();
+        clearHighlights();
       });
       input.addEventListener("keyup", function (e) {
         // console.log(`keyup: ${e.key}`);

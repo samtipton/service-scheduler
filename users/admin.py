@@ -11,7 +11,7 @@ class TaskPreferenceInline(admin.TabularInline):
 
 
 class CustomUserAdmin(UserAdmin):
-    list_display = ("email", "first_name", "last_name", "assignment_count", "is_staff")
+    list_display = ("email", "first_name", "last_name", "assignment_count", "is_active")
     search_fields = ("email", "first_name", "last_name")
     ordering = ["email"]
 
