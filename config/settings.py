@@ -95,9 +95,9 @@ TEMPLATES = [
 ]
 
 # Authentication settings
-LOGIN_URL = "login"
+LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "schedules:index"  # Adjust to your schedules index view name
-LOGOUT_REDIRECT_URL = "login"
+LOGOUT_REDIRECT_URL = "/login/"
 
 WSGI_APPLICATION = "config.wsgi.application"
 
