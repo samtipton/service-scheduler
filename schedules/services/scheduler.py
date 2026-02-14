@@ -194,10 +194,8 @@ class Scheduler:
             # maximize the difference between ideal and actual averages
             (
                 float(self.get_ideal_average(user, date_task))
-                - (
-                    float(self.get_adjusted_actual_average(user, date_task))
-                    * self.user_task_preferences[user.pk][date_task.task_id].value
-                )
+                * self.user_task_preferences[user.pk][date_task.task_id].value
+                - float(self.get_adjusted_actual_average(user, date_task))
             )
             # 1 if assigned, 0 otherwise
             * self.x[(date_task, user)]
@@ -214,16 +212,18 @@ class Scheduler:
 
         actual = float(self.get_actual_average(user, date_task))
         ideal = float(self.get_ideal_average(user, date_task))
+        preference = self.user_task_preferences[user.pk][date_task.task_id].value
+        personal_target = ideal * preference
 
         # Very low threshold - only affect users with almost no assignments
-        threshold_value = ideal * 0.05  # 5% of ideal
+        threshold_value = personal_target * 0.05  # 5% of personal target
 
         if actual < threshold_value:
-            # For users below threshold, pull them toward ideal with random variation
+            # For users below threshold, pull them toward personal target with random variation
             jitter_factor = 0.9 + random.uniform(
                 0, 0.2
             )  # Random value between 0.9 and 1.1
-            adjusted_actual = actual + (ideal - actual) * jitter_factor
+            adjusted_actual = actual + (personal_target - actual) * jitter_factor
 
             self._adjusted_average_cache[cache_key] = adjusted_actual
             return adjusted_actual
