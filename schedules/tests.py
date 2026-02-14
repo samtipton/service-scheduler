@@ -454,6 +454,7 @@ class AssignmentStatsTestCase(TestCase):
     def test_update_all_stats(self):
 
         # Create some assignments
+        # Note: AssignmentStats are now automatically created via signal handler as snapshots
         Assignment.objects.create(
             user=self.user1, task=self.task, assigned_at=timezone.now()
         )
@@ -464,18 +465,30 @@ class AssignmentStatsTestCase(TestCase):
             user=self.user2, task=self.task, assigned_at=timezone.now()
         )
 
-        # Create stats for both users
-        stats1, created = AssignmentStats.objects.get_or_create(
-            user=self.user1, task=self.task, ideal_average=Decimal("0.5")
+        # Get the latest stats for both users (created automatically by signal)
+        stats1 = (
+            AssignmentStats.objects.filter(user=self.user1, task=self.task)
+            .order_by("-created_at")
+            .first()
         )
-        stats2, created = AssignmentStats.objects.get_or_create(
-            user=self.user2, task=self.task, ideal_average=Decimal("0.5")
+        stats2 = (
+            AssignmentStats.objects.filter(user=self.user2, task=self.task)
+            .order_by("-created_at")
+            .first()
         )
 
+        # Verify both stats were automatically created
+        self.assertIsNotNone(stats1)
+        self.assertIsNotNone(stats2)
+
+        # Note: Stats are now snapshots per user, so user1's stat reflects
+        # the state when user1's last assignment was created (2 out of 2 = 100%),
+        # not the global state after user2's assignment
         self.assertAlmostEqual(stats1.ideal_average, Decimal("0.5"), places=8)
-        self.assertAlmostEqual(stats1.actual_average, Decimal("0.66666667"), places=8)
-        self.assertAlmostEqual(stats1.assignment_delta, Decimal("0.33333334"), places=8)
+        self.assertAlmostEqual(stats1.actual_average, Decimal("1.0"), places=8)
+        self.assertAlmostEqual(stats1.assignment_delta, Decimal("1.0"), places=8)
 
+        # user2's stat reflects the state when user2's assignment was created (1 out of 3)
         self.assertAlmostEqual(stats2.ideal_average, Decimal("0.5"), places=8)
         self.assertAlmostEqual(stats2.actual_average, Decimal("0.33333333"), places=8)
         self.assertAlmostEqual(

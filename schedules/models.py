@@ -4,6 +4,8 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
+from django.db.models.signals import post_save, m2m_changed
+from django.dispatch import receiver
 from schedules.decorators import round_decimal
 
 
@@ -92,15 +94,20 @@ class Schedule(models.Model):
         ).exclude(id=self.id)
         other_official_schedules.update(is_official=False)
 
-        # Then mark this one as selected and generate stats
+        # Then mark this one as selected
+        # Note: AssignmentStats are now created automatically via signal when assignments are created
         self.is_official = True
-        self.save()  # This will trigger generate_assignment_stats if needed
+        self.save()
 
     def generate_assignment_stats(self):
         """Generate assignment stats for this schedule.
         For user/task combinations with assignments in this schedule, create new stats.
         For all other combinations, reuse the latest existing stats.
         Only creates stats for users who have assignments or preferences.
+
+        Note: This is the legacy bulk method. Stats are now automatically created
+        via signal handler when assignments are created, regardless of official status.
+        This method is kept for backward compatibility and bulk regeneration.
         """
         # Clean up old stats before creating new ones
         self._cleanup_old_stats()
@@ -156,7 +163,6 @@ class Schedule(models.Model):
         stats_to_create = []
         stats_to_update = []
         created_from_assignments = 0
-        created_from_preferences = 0
         created_from_no_existing = 0
 
         # Process only relevant user/task combinations
@@ -197,9 +203,9 @@ class Schedule(models.Model):
                                 AssignmentStats(
                                     user=user,
                                     task=task,
-                                    ideal_average=0,  # Will be calculated on save
-                                    actual_average=0,  # Will be calculated on save
-                                    assignment_delta=0,  # Will be calculated on save
+                                    ideal_average=0,  # Will be calculated below
+                                    actual_average=0,  # Will be calculated below
+                                    assignment_delta=0,  # Will be calculated below
                                 )
                             )
                             created_from_no_existing += 1
@@ -207,9 +213,16 @@ class Schedule(models.Model):
         # Bulk create new stats
         if stats_to_create:
             new_stats = AssignmentStats.objects.bulk_create(stats_to_create)
-            # Add schedule to all new stats
+            # Calculate values for each stat
             for stat in new_stats:
+                stat.ideal_average = stat.calculate_ideal_average()
+                stat.actual_average = stat.calculate_actual_average()
+                stat.assignment_delta = stat.calculate_assignment_delta()
                 stat.schedule.add(self)
+            # Bulk update all at once
+            AssignmentStats.objects.bulk_update(
+                new_stats, ["ideal_average", "actual_average", "assignment_delta"]
+            )
             print(f"Created {len(new_stats)} new stats:")
             print(f"  - {created_from_assignments} from assignments in this schedule")
             print(f"  - {created_from_no_existing} from no existing stats")
@@ -237,11 +250,6 @@ class Schedule(models.Model):
     def save(self, *args, **kwargs):
         """Update statistics before saving"""
         self.updated_at = timezone.now()
-
-        # If this is becoming official and has no stats yet, generate them
-        if self.is_official and self.assignment_stats.count() == 0:
-            self.generate_assignment_stats()
-
         super().save(*args, **kwargs)
 
     # TODO this might make more sense then creating all assignments
@@ -458,6 +466,56 @@ class AssignmentStats(models.Model):
     def __str__(self):
         return f"{self.user.username} {self.task.name} assignment delta: {self.assignment_delta}"
 
+    @classmethod
+    def update_or_create_for_assignment(cls, user, task, schedule):
+        """
+        Update or create AssignmentStats for a specific user/task/schedule combination.
+        This is called whenever an assignment is created or updated.
+
+        If a schedule is provided, we look for a stat already associated with that schedule.
+        If no schedule or no existing stat, we look for the most recent stat to update.
+        Only creates a new stat if none exists for this user/task combination.
+        """
+        stat = None
+
+        # If schedule is provided, try to find existing stat for this schedule
+        if schedule:
+            # Check if there's already a stat for this user/task associated with this schedule
+            existing_stats = cls.objects.filter(
+                user=user, task=task, schedule=schedule
+            ).order_by("-created_at")
+
+            if existing_stats.exists():
+                stat = existing_stats.first()
+
+        # If we don't have a stat yet, try to get the most recent one for this user/task
+        if stat is None:
+            stat = (
+                cls.objects.filter(user=user, task=task).order_by("-created_at").first()
+            )
+
+        # If we still don't have a stat, create a new one
+        if stat is None:
+            stat = cls.objects.create(
+                user=user,
+                task=task,
+                ideal_average=0,  # Will be calculated below
+                actual_average=0,  # Will be calculated below
+                assignment_delta=0,  # Will be calculated below
+            )
+
+        # Calculate/update values
+        stat.ideal_average = stat.calculate_ideal_average()
+        stat.actual_average = stat.calculate_actual_average()
+        stat.assignment_delta = stat.calculate_assignment_delta()
+        stat.save()
+
+        # Associate with the schedule if provided and not already associated
+        if schedule and schedule not in stat.schedule.all():
+            stat.schedule.add(schedule)
+
+        return stat
+
     @round_decimal(places=DECIMAL_PLACES)
     def calculate_actual_average(self) -> Decimal:
         """Calculate the actual average for this user/task combination"""
@@ -522,3 +580,51 @@ class AssignmentStats(models.Model):
         if not self.assignment_delta:
             self.assignment_delta = self.calculate_assignment_delta()
         super().save(*args, **kwargs)
+
+
+# Signal handler to update AssignmentStats whenever an Assignment is created or updated
+@receiver(post_save, sender=Assignment)
+def update_assignment_stats(sender, instance, created, **kwargs):
+    """
+    Update AssignmentStats whenever an assignment is created or updated.
+    This ensures stats are always up-to-date regardless of schedule official status.
+
+    AssignmentStats are snapshots tied to a specific schedule, so we only update
+    the stat for this specific user/task/schedule combination.
+    """
+    if instance.user and instance.task:
+        AssignmentStats.update_or_create_for_assignment(
+            user=instance.user, task=instance.task, schedule=instance.schedule
+        )
+
+
+# Signal handler to clean up orphaned AssignmentStats when schedules removed
+@receiver(m2m_changed, sender=AssignmentStats.schedule.through)
+def cleanup_orphaned_stats_on_m2m_change(sender, instance, action, **kwargs):
+    """
+    Delete AssignmentStats that are no longer associated with any schedules.
+
+    This handles the case where schedules are explicitly removed from a stat.
+    """
+    if action == "post_remove" and isinstance(instance, AssignmentStats):
+        # If this stat has no schedules left, delete it
+        if instance.schedule.count() == 0:
+            instance.delete()
+
+
+# Signal handler to clean up orphaned AssignmentStats when a Schedule is deleted
+@receiver(models.signals.post_delete, sender=Schedule)
+def cleanup_orphaned_stats_on_schedule_delete(sender, instance, **kwargs):
+    """
+    After a Schedule is deleted, clean up any AssignmentStats that are now orphaned.
+
+    This finds all stats with zero schedules and deletes them to prevent database bloat.
+    """
+    # Find all AssignmentStats with no schedules
+    orphaned_stats = AssignmentStats.objects.annotate(
+        schedule_count=models.Count("schedule")
+    ).filter(schedule_count=0)
+
+    orphaned_count = orphaned_stats.count()
+    if orphaned_count > 0:
+        orphaned_stats.delete()

@@ -233,21 +233,24 @@ class Scheduler:
 
     def get_actual_average(self, user: User, date_task: DateTask):
         if user.pk not in self.user_task_stats:
-            print(f"user {user.pk} does not have a task stat")
-            return 0
+            # Create unsaved instance to calculate on-the-fly
+            temp_stat = AssignmentStats(user=user, task=date_task.task)
+            return temp_stat.calculate_actual_average()
         if date_task.task_id not in self.user_task_stats[user.pk]:
-            raise KeyError(
-                f"user {user.pk} does not have a task stat for task {date_task.task_id}"
-            )
+            # Create unsaved instance to calculate on-the-fly
+            temp_stat = AssignmentStats(user=user, task=date_task.task)
+            return temp_stat.calculate_actual_average()
         return self.user_task_stats[user.pk][date_task.task_id].actual_average
 
     def get_ideal_average(self, user: User, date_task: DateTask):
         if user.pk not in self.user_task_stats:
-            return 0
+            # Create unsaved instance to calculate on-the-fly
+            temp_stat = AssignmentStats(user=user, task=date_task.task)
+            return temp_stat.calculate_ideal_average()
         if date_task.task_id not in self.user_task_stats[user.pk]:
-            raise KeyError(
-                f"user {user.pk} ({user.inverted_name()}) does not have a task stat for task {date_task.task_id}"
-            )
+            # Create unsaved instance to calculate on-the-fly
+            temp_stat = AssignmentStats(user=user, task=date_task.task)
+            return temp_stat.calculate_ideal_average()
         return self.user_task_stats[user.pk][date_task.task_id].ideal_average
 
     def constrain_past_assignments(self):
