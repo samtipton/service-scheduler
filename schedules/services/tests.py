@@ -1,245 +1,225 @@
-from datetime import date, time
-from unittest.mock import MagicMock, patch
+from collections import Counter
+from datetime import date, datetime, time, timedelta
 
 from django.test import TestCase
-from schedules.models import Schedule, Service, Task
-from schedules.services.scheduler import Scheduler
+from django.utils import timezone
+from pulp import LpMaximize, lpSum
+
+from schedules.models import Assignment, Schedule, Service, Task, TaskPreference
+from schedules.services.objectives import CatchUpShareObjective
+from schedules.services.scheduler import DEFAULT_CONSTRAINT_NAMES, Scheduler
 from users.models import User
 
 
-class SchedulerTestCase(TestCase):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
+TEST_EMAIL = "test+{slug}@example.com"
 
-        # Patch the methods and start the patches
-        cls.patcher_user_model = patch("schedules.services.scheduler.get_user_model")
-        cls.patcher_task_prefs = patch(
-            "schedules.services.scheduler.TaskPreference.objects.all"
+
+class PreferUserObjective:
+    """Stub: maximize assignments for one user. Constraints still apply."""
+
+    name = "PreferUserObjective"
+    sense = LpMaximize
+
+    def __init__(self, user):
+        self.user = user
+
+    def expression(self, x, ctx):
+        return lpSum(
+            x[(date_task, user)]
+            for user in ctx.users
+            for date_task in ctx.date_tasks
+            if ctx.is_eligible(user, date_task) and user.pk == self.user.pk
         )
 
-        # Start the patches
-        cls.mock_get_user_model = cls.patcher_user_model.start()
-        cls.mock_task_prefs_all = cls.patcher_task_prefs.start()
 
-        # Mock user model return value
-        cls.mock_user1 = MagicMock(pk=1, username="user1")
-        cls.mock_user2 = MagicMock(pk=2, username="user2")
-        cls.mock_get_user_model.return_value.objects.all.return_value = [
-            cls.mock_user1,
-            cls.mock_user2,
-        ]
-
-        # Mock tasks
-        cls.mock_tasks = []
-        for i, name in enumerate(["First Task", "Second Task", "Third Task"], 1):
-            task = MagicMock()
-            task.name = name
-            task.id = str(i)
-            task.get_eligible_users.return_value = [cls.mock_user1, cls.mock_user2]
-            cls.mock_tasks.append(task)
-
-        # Assign the mock_tasks_property to each service in mock_services
-        cls.mock_services = [
-            MagicMock(
-                **{
-                    "name": "Test Service 1",
-                    "day_of_week": 0,
-                    "start_time": time(9, 0),
-                    "tasks.all.return_value": [cls.mock_tasks[0]],
-                }
-            ),
-            MagicMock(
-                **{
-                    "name": "Test Service 2",
-                    "day_of_week": 3,
-                    "start_time": time(19, 0),
-                    "tasks.all.return_value": [cls.mock_tasks[1]],
-                }
-            ),
-            MagicMock(
-                **{
-                    "name": "Test Service 3",
-                    "day_of_week": None,
-                    "start_time": time(0, 0),
-                    "tasks.all.return_value": [cls.mock_tasks[2]],
-                }
-            ),
-        ]
-
-        # Mock task preferences
-        cls.mock_task_prefs = []
-        for user in [cls.mock_user1, cls.mock_user2]:
-            for task in cls.mock_tasks:
-                task_pref = MagicMock()
-                task_pref.user = user
-                task_pref.task = task
-                task_pref.value = 1.0
-                cls.mock_task_prefs.append(task_pref)
-
-        cls.mock_task_prefs_all.return_value.select_related.return_value = (
-            cls.mock_task_prefs
+class SchedulerFixtureMixin:
+    def _user(self, slug, first, last):
+        return User.objects.create_user(
+            email=TEST_EMAIL.format(slug=slug),
+            first_name=first,
+            last_name=last,
+            password="x",
         )
 
-        # Mock assignment stats
-        cls.mock_assignment_stats_all = []
-        for user in [cls.mock_user1, cls.mock_user2]:
-            for task in cls.mock_tasks:
-                stat = MagicMock()
-                # Configure the stat with actual attributes instead of nested configuration
-                stat.user = user
-                stat.task = task
-                stat.ideal_average = 1.0  # Add any other needed attributes
-                stat.actual_average = 0.5
-                cls.mock_assignment_stats_all.append(stat)
+    def _sunday_world(self, task_id="song_leader"):
+        self.creator = self._user("creator", "Test", "Creator")
+        self.service = Service.objects.create(
+            name="Sunday AM", day_of_week=0, start_time=time(10, 0)
+        )
+        self.task = Task.objects.create(
+            id=task_id, name="Song Leader", service=self.service, order=1
+        )
+        return self.service, self.task
 
-        # Create the schedule mock and set its assignment_stats property
-        cls.mock_schedule = MagicMock()
-        cls.mock_schedule.configure_mock(
-            **{
-                "assignment_stats.all.return_value.select_related.return_value": cls.mock_assignment_stats_all
-            }
+    def _schedule(self, year, month, base=None):
+        return Schedule.objects.create(
+            name=f"test-{year}-{month}",
+            date=date(year, month, 1),
+            user=self.creator,
+            base_schedule=base,
         )
 
-    @classmethod
-    def tearDownClass(cls):
-        # Stop all patches
-        cls.patcher_user_model.stop()
-        cls.patcher_task_prefs.stop()
-        super().tearDownClass()
+    def _pref(self, user, task, value=1.0):
+        return TaskPreference.objects.create(user=user, task=task, value=value)
 
-    def test_service_tasks(self):
-        tasks = (
-            self.mock_services[0].tasks.all()
-            + self.mock_services[1].tasks.all()
-            + self.mock_services[2].tasks.all()
+    def _history(self, user, task, on, n=1):
+        hist = self._schedule(on.year, on.month)
+        for i in range(n):
+            Assignment.objects.create(
+                schedule=hist,
+                task=task,
+                user=user,
+                assigned_at=timezone.make_aware(
+                    datetime(on.year, on.month, on.day) + timedelta(hours=i)
+                ),
+            )
+
+
+class DateTaskCalendarTests(SchedulerFixtureMixin, TestCase):
+    def setUp(self):
+        self.creator = self._user("creator", "Test", "Creator")
+        self.sun = Service.objects.create(
+            name="Sunday", day_of_week=0, start_time=time(9, 0)
         )
-
-        self.assertEqual(len(tasks), 3)
-        self.assertEqual(tasks[0].name, "First Task")
-        self.assertEqual(tasks[1].name, "Second Task")
-        self.assertEqual(tasks[2].name, "Third Task")
-        self.assertEqual(
-            tasks[0].get_eligible_users(), [self.mock_user1, self.mock_user2]
+        self.wed = Service.objects.create(
+            name="Wednesday", day_of_week=3, start_time=time(19, 0)
         )
-        self.assertEqual(
-            tasks[1].get_eligible_users(), [self.mock_user1, self.mock_user2]
+        self.weekly = Service.objects.create(
+            name="Weekly", day_of_week=None, start_time=time(0, 0)
         )
-        self.assertEqual(
-            tasks[2].get_eligible_users(), [self.mock_user1, self.mock_user2]
+        self.t1 = Task.objects.create(
+            id="cal_sun", name="Sun Task", service=self.sun, order=1
         )
-
-    def test_user_task_stats(self):
-        user_task_stats = self.mock_schedule.assignment_stats.all().select_related(
-            "user", "task"
+        self.t2 = Task.objects.create(
+            id="cal_wed", name="Wed Task", service=self.wed, order=2
         )
-        print(user_task_stats)
-        self.assertEqual(len(user_task_stats), 6)
-        self.assertEqual(user_task_stats[0].task.name, "First Task")
-        self.assertEqual(user_task_stats[1].task.name, "Second Task")
-        self.assertEqual(user_task_stats[2].task.name, "Third Task")
-
-    def test_init(self):
-        # Mock schedule and services
-        self.mock_schedule.date.year = 2025
-        self.mock_schedule.date.month = 3
-
-        # Create the Scheduler instance
-        scheduler = Scheduler(self.mock_schedule, self.mock_services)
-
-        # Assertions
-        self.assertEqual(scheduler.year, 2025)
-        self.assertEqual(scheduler.month, 3)
-        self.assertEqual(scheduler.users, [self.mock_user1, self.mock_user2])
-        self.assertIn(self.mock_tasks[0], scheduler.services[0].tasks.all())
-        self.assertIn(self.mock_tasks[1], scheduler.services[1].tasks.all())
-        self.assertIn(self.mock_tasks[2], scheduler.services[2].tasks.all())
-        self.assertEqual(
-            self.mock_task_prefs[0], scheduler.user_task_preferences[1]["1"]
+        self.t3 = Task.objects.create(
+            id="cal_week", name="Week Task", service=self.weekly, order=3
         )
+        self.alice = self._user("alice", "Alice", "Test")
+        for task in (self.t1, self.t2, self.t3):
+            self._pref(self.alice, task)
 
-    def test_get_date_tasks_March_2025(self):
-        """
-        5 weeks with non-equal number Sundays and Wednesdays in March 2025
-        therefore 4 Sundays and 5 Wednesdays and 5 weekly tasks, first
-        weekly tasks will have sundays calendar dates
-        """
-        self.mock_schedule.date.year = 2025
-        self.mock_schedule.date.month = 3
-        scheduler = Scheduler(self.mock_schedule, self.mock_services)
+    def _date_task_ids(self, year, month):
+        schedule = self._schedule(year, month)
+        services = list(Service.objects.prefetch_related("tasks").all())
+        scheduler = Scheduler(schedule, services)
+        return set(str(dt) for dt in scheduler.date_tasks)
 
-        date_tasks = set(str(dt) for dt in scheduler.get_date_tasks())
+    def test_march_2025(self):
+        date_tasks = self._date_task_ids(2025, 3)
         self.assertEqual(len(date_tasks), 14)
-        self.assertIn("2025-3-2-1", date_tasks)
-        self.assertIn("2025-3-9-1", date_tasks)
-        self.assertIn("2025-3-16-1", date_tasks)
-        self.assertIn("2025-3-23-1", date_tasks)
-        self.assertIn("2025-3-30-1", date_tasks)
+        self.assertIn("2025-3-2-cal_sun", date_tasks)
+        self.assertIn("2025-3-30-cal_sun", date_tasks)
+        self.assertIn("2025-3-5-cal_wed", date_tasks)
+        self.assertIn("2025-3-26-cal_wed", date_tasks)
+        self.assertNotIn("2025-3-2-cal_wed", date_tasks)
+        self.assertIn("2025-3-2-cal_week", date_tasks)
+        self.assertIn("2025-3-30-cal_week", date_tasks)
 
-        self.assertIn("2025-3-5-2", date_tasks)
-        self.assertIn("2025-3-12-2", date_tasks)
-        self.assertIn("2025-3-19-2", date_tasks)
-        self.assertIn("2025-3-26-2", date_tasks)
-        # no wednesday in week 5
-
-        self.assertIn("2025-3-2-3", date_tasks)
-        self.assertIn("2025-3-9-3", date_tasks)
-        self.assertIn("2025-3-16-3", date_tasks)
-        self.assertIn("2025-3-23-3", date_tasks)
-        self.assertIn("2025-3-30-3", date_tasks)
-
-    def test_get_date_tasks_April_2025(self):
-        """
-        5 weeks with non-equal number Sundays and Wednesdays
-        4 Sundays and 5 Wednesdays and 5 weekly tasks, first
-        weekly task will have a calendar date of a wednesday in this case
-        """
-        self.mock_schedule.date.year = 2025
-        self.mock_schedule.date.month = 4
-        scheduler = Scheduler(self.mock_schedule, self.mock_services)
-
-        date_tasks = set(str(dt) for dt in scheduler.get_date_tasks())
+    def test_april_2025(self):
+        date_tasks = self._date_task_ids(2025, 4)
         self.assertEqual(len(date_tasks), 14)
-        self.assertIn("2025-4-6-1", date_tasks)
-        self.assertIn("2025-4-13-1", date_tasks)
-        self.assertIn("2025-4-20-1", date_tasks)
-        self.assertIn("2025-4-27-1", date_tasks)
+        self.assertIn("2025-4-6-cal_sun", date_tasks)
+        self.assertIn("2025-4-2-cal_wed", date_tasks)
+        self.assertIn("2025-4-30-cal_wed", date_tasks)
+        self.assertIn("2025-4-2-cal_week", date_tasks)
 
-        self.assertIn("2025-4-2-2", date_tasks)
-        self.assertIn("2025-4-9-2", date_tasks)
-        self.assertIn("2025-4-16-2", date_tasks)
-        self.assertIn("2025-4-23-2", date_tasks)
-        self.assertIn("2025-4-30-2", date_tasks)
-
-        self.assertIn("2025-4-2-3", date_tasks)  # odd duck
-        self.assertIn("2025-4-6-3", date_tasks)
-        self.assertIn("2025-4-13-3", date_tasks)
-        self.assertIn("2025-4-20-3", date_tasks)
-        self.assertIn("2025-4-27-3", date_tasks)
-
-    def test_get_date_tasks_May_2025(self):
-        """
-        4 weeks with equal number Sundays and Wednesdays
-        4 Sundays and 4 Wednesdays and 4 weekly tasks
-        """
-        self.mock_schedule.date.year = 2025
-        self.mock_schedule.date.month = 5
-        scheduler = Scheduler(self.mock_schedule, self.mock_services)
-
-        date_tasks = set(str(dt) for dt in scheduler.get_date_tasks())
-        print(date_tasks)
+    def test_may_2025(self):
+        date_tasks = self._date_task_ids(2025, 5)
         self.assertEqual(len(date_tasks), 12)
-        self.assertIn("2025-5-4-1", date_tasks)
-        self.assertIn("2025-5-11-1", date_tasks)
-        self.assertIn("2025-5-18-1", date_tasks)
-        self.assertIn("2025-5-25-1", date_tasks)
+        self.assertIn("2025-5-4-cal_sun", date_tasks)
+        self.assertIn("2025-5-25-cal_sun", date_tasks)
+        self.assertIn("2025-5-7-cal_wed", date_tasks)
+        self.assertIn("2025-5-4-cal_week", date_tasks)
 
-        self.assertIn("2025-5-7-2", date_tasks)
-        self.assertIn("2025-5-14-2", date_tasks)
-        self.assertIn("2025-5-21-2", date_tasks)
-        self.assertIn("2025-5-28-2", date_tasks)
 
-        self.assertIn("2025-5-4-3", date_tasks)
-        self.assertIn("2025-5-11-3", date_tasks)
-        self.assertIn("2025-5-18-3", date_tasks)
-        self.assertIn("2025-5-25-3", date_tasks)
+class RealSolveTests(SchedulerFixtureMixin, TestCase):
+    def test_catch_up_gives_extra_slot_to_most_behind(self):
+        self._sunday_world()
+        alice = self._user("alice", "Alice", "Test")
+        bob = self._user("bob", "Bob", "Test")
+        carol = self._user("carol", "Carol", "Test")
+        for user in (alice, bob, carol):
+            self._pref(user, self.task)
+        self._history(alice, self.task, date(2025, 4, 6), n=10)
+        self._history(bob, self.task, date(2025, 4, 13), n=8)
+        self._history(carol, self.task, date(2025, 4, 20), n=2)
+
+        schedule = self._schedule(2025, 5)
+        services = list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
+        result, assignments = Scheduler(schedule, services).solve()
+        self.assertNotEqual(result, -1)
+        self.assertEqual(len(assignments), 4)
+        counts = Counter(assignments.values())
+        self.assertEqual(counts["Test, Carol"], 2)
+        self.assertEqual(counts["Test, Alice"], 1)
+        self.assertEqual(counts["Test, Bob"], 1)
+
+    def test_stub_objective_prefers_named_user(self):
+        self._sunday_world()
+        alice = self._user("alice", "Alice", "Test")
+        bob = self._user("bob", "Bob", "Test")
+        carol = self._user("carol", "Carol", "Test")
+        for user in (alice, bob, carol):
+            self._pref(user, self.task)
+
+        schedule = self._schedule(2025, 5)
+        services = list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
+        result, assignments = Scheduler(
+            schedule, services, objective=PreferUserObjective(alice)
+        ).solve()
+        self.assertNotEqual(result, -1)
+        counts = Counter(assignments.values())
+        self.assertEqual(counts["Test, Alice"], 2)
+        self.assertEqual(counts["Test, Bob"], 1)
+        self.assertEqual(counts["Test, Carol"], 1)
+
+    def test_abundance_at_most_one_each(self):
+        self._sunday_world()
+        people = [
+            self._user(f"u{i}", f"User{i}", "Test") for i in range(8)
+        ]
+        for user in people:
+            self._pref(user, self.task)
+
+        schedule = self._schedule(2025, 5)
+        services = list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
+        result, assignments = Scheduler(schedule, services).solve()
+        self.assertNotEqual(result, -1)
+        self.assertEqual(len(assignments), 4)
+        counts = Counter(assignments.values())
+        self.assertEqual(len(counts), 4)
+        self.assertTrue(all(n == 1 for n in counts.values()))
+
+    def test_history_from_assignment_not_stats(self):
+        self._sunday_world()
+        alice = self._user("alice", "Alice", "Test")
+        self._pref(alice, self.task)
+        self._history(alice, self.task, date(2025, 4, 6), n=3)
+        schedule = self._schedule(2025, 5)
+        services = list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
+        scheduler = Scheduler(schedule, services)
+        dt = scheduler.date_tasks[0]
+        self.assertEqual(scheduler.assignment_counts[(alice.pk, self.task.id)], 3)
+        self.assertEqual(scheduler.get_actual_average(alice, dt), 1.0)
+        self.assertEqual(scheduler.get_ideal_average(alice, dt), 1.0)
+
+    def test_constraint_names_can_drop_a_rule(self):
+        names = tuple(n for n in DEFAULT_CONSTRAINT_NAMES if n != "total_assignments")
+        self._sunday_world()
+        alice = self._user("alice", "Alice", "Test")
+        self._pref(alice, self.task)
+        schedule = self._schedule(2025, 5)
+        services = list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
+        scheduler = Scheduler(schedule, services, constraint_names=names)
+        self.assertEqual(scheduler.constraint_names, names)
+
+    def test_unknown_constraint_name_raises(self):
+        self._sunday_world()
+        alice = self._user("alice", "Alice", "Test")
+        self._pref(alice, self.task)
+        schedule = self._schedule(2025, 5)
+        services = list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
+        with self.assertRaises(ValueError):
+            Scheduler(schedule, services, constraint_names=("not_a_rule",))

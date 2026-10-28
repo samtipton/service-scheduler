@@ -2,7 +2,12 @@ from collections import defaultdict
 import json
 import pdfkit
 from datetime import datetime
-from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import (
+    HttpResponse,
+    HttpResponseForbidden,
+    HttpResponseRedirect,
+    JsonResponse,
+)
 from django.utils import timezone
 from django.views import generic
 from django.shortcuts import get_object_or_404, render
@@ -74,6 +79,7 @@ class MonthView(generic.View):
         eligible_users_for_task.default_factory = None
 
         context = {
+            "schedule": schedule,
             "year": year,
             "month": month,
             "services": services,
@@ -326,6 +332,16 @@ def clear_schedule(request, id):
         else:
             return JsonResponse({"success": False, "error": "Unauthorized"}, status=403)
     return JsonResponse({"success": False}, status=405)
+
+
+def delete_schedule(request, id):
+    schedule = get_object_or_404(Schedule, id=id)
+    if request.method != "POST":
+        return HttpResponseRedirect("/schedules/")
+    if not schedule.can_be_deleted_by(request.user):
+        return HttpResponseForbidden("You cannot delete this schedule.")
+    schedule.delete()
+    return HttpResponseRedirect("/schedules/", status=303)
 
 
 def create_schedule(request):

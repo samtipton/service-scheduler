@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% load schedule_tags %}
 
 {% block title %}Schedules{% endblock %}
 
@@ -16,9 +17,15 @@
     <ul>
     {% for schedule in schedules %}
         <li>
-            <a href="{% url 'schedules:month_view' id=schedule.id %}">
-                {{ schedule.name }}
-            </a>
+            <span class="schedule-row">
+                <a href="{% url 'schedules:month_view' id=schedule.id %}">{{ schedule.name }}</a>
+                {% if schedule|can_be_deleted_by:user %}
+                <form method="post" action="{% url 'schedules:delete_schedule' id=schedule.id %}" class="delete-schedule">
+                    {% csrf_token %}
+                    <button type="submit" class="delete-schedule-link" onclick="return confirm('Delete {{ schedule.name|escapejs }}? Its assignments will be removed. Later schedules that used it as a base keep their own assignments.');">[delete]</button>
+                </form>
+                {% endif %}
+            </span>
         </li>
     {% endfor %}
     </ul>

@@ -54,6 +54,7 @@ Django 5.1 · PostgreSQL · PuLP/CBC · vanilla JS · pdfkit
 ## Key files
 
 - `schedules/services/scheduler.py` — ILP
+- `schedules/services/objectives.py` — CatchUpShareObjective (swap here later)
 - `schedules/models.py` — domain
 - `schedules/views.py` / `static/schedules/schedule.js` — month UI
 - `users/models.py` — email login

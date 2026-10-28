@@ -4,7 +4,7 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
-from django.db.models.signals import post_save, m2m_changed
+from django.db.models.signals import post_save
 from django.dispatch import receiver
 from schedules.decorators import round_decimal
 
@@ -76,6 +76,12 @@ class Schedule(models.Model):
     def __str__(self):
         status = "Selected" if self.is_official else "Draft"
         return f"{self.name} ({status}) - {self.date.strftime('%B %Y')}"
+
+    def can_be_deleted_by(self, user):
+        """Creator or staff. No groups/RBAC yet."""
+        if user is None or not user.is_authenticated:
+            return False
+        return user.pk == self.user_id or user.is_staff or user.is_superuser
 
     def select_as_official(self):
         """Select this schedule as the official one for its month/year"""
@@ -598,33 +604,7 @@ def update_assignment_stats(sender, instance, created, **kwargs):
         )
 
 
-# Signal handler to clean up orphaned AssignmentStats when schedules removed
-@receiver(m2m_changed, sender=AssignmentStats.schedule.through)
-def cleanup_orphaned_stats_on_m2m_change(sender, instance, action, **kwargs):
-    """
-    Delete AssignmentStats that are no longer associated with any schedules.
-
-    This handles the case where schedules are explicitly removed from a stat.
-    """
-    if action == "post_remove" and isinstance(instance, AssignmentStats):
-        # If this stat has no schedules left, delete it
-        if instance.schedule.count() == 0:
-            instance.delete()
-
-
-# Signal handler to clean up orphaned AssignmentStats when a Schedule is deleted
-@receiver(models.signals.post_delete, sender=Schedule)
-def cleanup_orphaned_stats_on_schedule_delete(sender, instance, **kwargs):
-    """
-    After a Schedule is deleted, clean up any AssignmentStats that are now orphaned.
-
-    This finds all stats with zero schedules and deletes them to prevent database bloat.
-    """
-    # Find all AssignmentStats with no schedules
-    orphaned_stats = AssignmentStats.objects.annotate(
-        schedule_count=models.Count("schedule")
-    ).filter(schedule_count=0)
-
-    orphaned_count = orphaned_stats.count()
-    if orphaned_count > 0:
-        orphaned_stats.delete()
+# Do not delete AssignmentStats when a Schedule is deleted or unlinked.
+# The M2M through rows for that schedule go away; the stat rows stay.
+# History for the solver is Assignment; throwing away stats on schedule
+# delete was wiping snapshots still useful for datalist sort.

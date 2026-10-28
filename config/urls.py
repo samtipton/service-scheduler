@@ -18,10 +18,12 @@ Including another URLconf
 from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import RedirectView
 from debug_toolbar.toolbar import debug_toolbar_urls
 from django.contrib.auth import views as auth_views
 
 urlpatterns = [
+    path("", RedirectView.as_view(pattern_name="schedules:index", permanent=False)),
     path("schedules/", include("schedules.urls")),
     path("admin/", admin.site.urls),
     # Authentication URLs

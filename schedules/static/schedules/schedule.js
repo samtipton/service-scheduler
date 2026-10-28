@@ -370,7 +370,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
       setupInputEventListeners(input);
     }
   
-    let inputs = document.querySelectorAll("input");
+    let inputs = document.querySelectorAll("input.assignment-input");
     inputs.forEach(function (input) {
       setupInput(input);
     });

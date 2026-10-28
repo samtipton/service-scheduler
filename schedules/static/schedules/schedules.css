@@ -50,3 +50,33 @@
     button[type="button"] {
         background-color: #9ca3af;
     }
+
+    .schedule-row {
+        display: inline;
+    }
+
+    .schedule-row .delete-schedule {
+        display: inline;
+        margin: 0;
+    }
+
+    .schedule-row .delete-schedule-link {
+        display: inline;
+        margin: 0 0 0 0.35em;
+        padding: 0;
+        border: none;
+        border-radius: 0;
+        background: none;
+        color: #b91c1c;
+        font: inherit;
+        line-height: inherit;
+        cursor: pointer;
+        opacity: 0;
+    }
+
+    .schedule-row:hover .delete-schedule-link,
+    .schedule-row .delete-schedule-link:focus {
+        opacity: 1;
+        background: none;
+        color: #b91c1c;
+    }

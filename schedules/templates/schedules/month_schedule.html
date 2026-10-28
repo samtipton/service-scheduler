@@ -32,6 +32,12 @@ This template expects the following context variables:
         <button id="download-pdf">Download PDF</button>
         <button id="toggle-assignment-count">Toggle Assignment Counts</button>
         <button id="clear-schedule">Clear Assignments</button>
+        {% if schedule|can_be_deleted_by:user %}
+        <form method="post" action="{% url 'schedules:delete_schedule' id=schedule.id %}" style="display:inline">
+            {% csrf_token %}
+            <button type="submit" onclick="return confirm('Delete this schedule? Its assignments will be removed.');">Delete Schedule</button>
+        </form>
+        {% endif %}
     </div>
     <div class="header">
         <h1>{{ month_name }}</h1>

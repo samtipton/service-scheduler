@@ -761,3 +761,96 @@ class ScheduleTestCase(TestCase):
         schedule.is_official = True
         schedule.save()
         self.assertEqual(str(schedule), "Test Schedule (Selected) - June 2023")
+
+
+class DeleteScheduleViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="test+deleter@example.com",
+            first_name="Test",
+            last_name="Deleter",
+            password="x",
+        )
+        self.schedule = Schedule.objects.create(
+            name="Throwaway",
+            date=datetime.date(2025, 5, 1),
+            user=self.user,
+        )
+        self.client.force_login(self.user)
+
+    def test_post_deletes_schedule_and_redirects(self):
+        response = self.client.post(f"/schedules/{self.schedule.id}/delete")
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response["Location"], "/schedules/")
+        self.assertFalse(Schedule.objects.filter(id=self.schedule.id).exists())
+
+    def test_get_does_not_delete(self):
+        response = self.client.get(f"/schedules/{self.schedule.id}/delete")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Schedule.objects.filter(id=self.schedule.id).exists())
+
+    def test_other_user_cannot_delete(self):
+        other = User.objects.create_user(
+            email="test+other@example.com",
+            first_name="Other",
+            last_name="User",
+            password="x",
+        )
+        self.client.force_login(other)
+        response = self.client.post(f"/schedules/{self.schedule.id}/delete")
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Schedule.objects.filter(id=self.schedule.id).exists())
+        list_page = self.client.get("/schedules/")
+        self.assertNotContains(list_page, "[delete]")
+
+    def test_staff_can_delete_someone_elses_schedule(self):
+        staff = User.objects.create_user(
+            email="test+staff@example.com",
+            first_name="Staff",
+            last_name="User",
+            password="x",
+            is_staff=True,
+        )
+        self.client.force_login(staff)
+        response = self.client.post(f"/schedules/{self.schedule.id}/delete")
+        self.assertEqual(response.status_code, 303)
+        self.assertFalse(Schedule.objects.filter(id=self.schedule.id).exists())
+
+    def test_delete_drops_only_this_schedule_assignments_keeps_stats(self):
+        service = Service.objects.create(
+            name="Sunday", day_of_week=0, start_time=datetime.time(10, 0)
+        )
+        task = Task.objects.create(
+            id="del_song", name="Song", service=service, order=1
+        )
+        keep = Schedule.objects.create(
+            name="Keep me", date=datetime.date(2025, 4, 1), user=self.user
+        )
+        Assignment.objects.create(
+            schedule=keep,
+            task=task,
+            user=self.user,
+            assigned_at=timezone.now(),
+        )
+        Assignment.objects.create(
+            schedule=self.schedule,
+            task=task,
+            user=self.user,
+            assigned_at=timezone.now(),
+        )
+        stats_ids = list(AssignmentStats.objects.values_list("id", flat=True))
+        self.assertTrue(stats_ids)
+
+        response = self.client.post(f"/schedules/{self.schedule.id}/delete")
+        self.assertEqual(response.status_code, 303)
+
+        self.assertFalse(Schedule.objects.filter(id=self.schedule.id).exists())
+        self.assertTrue(Schedule.objects.filter(id=keep.id).exists())
+        self.assertEqual(Assignment.objects.filter(schedule=keep).count(), 1)
+        self.assertEqual(Assignment.objects.filter(schedule_id=self.schedule.id).count(), 0)
+        self.assertEqual(
+            set(AssignmentStats.objects.values_list("id", flat=True)),
+            set(stats_ids),
+        )
+        self.assertTrue(User.objects.filter(id=self.user.id).exists())
+        self.assertTrue(Task.objects.filter(id=task.id).exists())

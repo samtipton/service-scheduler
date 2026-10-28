@@ -4,6 +4,11 @@ register = template.Library()
 
 
 @register.filter
+def can_be_deleted_by(schedule, user):
+    return schedule.can_be_deleted_by(user)
+
+
+@register.filter
 def addstr(arg1, arg2):
     """concatenate arg1 & arg2"""
     return str(arg1) + str(arg2)
