@@ -1,0 +1,76 @@
+# Service Scheduler
+
+Django app that assigns congregation men to recurring worship tasks with integer linear programming (PuLP/CBC). Fill each month fairly, rotate people through tasks they signed up for, keep history, respect exclusions.
+
+## Domain
+
+- **Service** — recurring event (Sun 9:00, Sun 10:30, Wednesday, Weekly). `day_of_week` is 0=Sunday; `None` = week-level.
+- **Task** — role on a service. Symmetric `excludes` (cannot hold both in the same week). Each task also excludes itself on save.
+- **TaskPreference** `p(u,t) ≥ 0` — `0` never assign, `(0,1)` below baseline, `1` baseline, `>1` want more. No upper bound. A 1-task man on a crowded role (e.g. Lord’s supper aid) who wants more Sundays raises `p` on that task. Small pools (song leader) stay at `p = 1` so one specialist is not over-represented. Church-specific; not a solver special case.
+- **Schedule** — one month. Optional `base_schedule` (previous month). At most one `is_official` per month.
+- **Assignment** — person + task + datetime on a schedule. Source of truth for history and fairness.
+- **AssignmentStats** — derived snapshot (`ideal_average`, `actual_average`, `assignment_delta`), M2M to schedules. Recalculated on assignment save.
+
+Volunteers are login `User`s. Single congregation. Charts are planned, not built.
+
+## Objective Function: what the LP solver optimizes for
+
+We **maximize** the catch-up value of the month: for each filled slot, score how far that person is *behind* their personal target share of that task, and add those scores up. People below target (historically too small a share given their preference) contribute a positive score, so the solver prefers them. People already above target contribute a negative score, so the solver avoids them. The chosen month is the one that most assigns the currently under-served and least assigns the currently over-served. `get_ideal_average` / `get_adjusted_actual_average` are computed once from history before `prob.solve`; this month’s `self.x` values do not change those numbers inside the LP.
+
+Code: `schedules/services/scheduler.py` (`set_objective_function`, `get_adjusted_actual_average`). Binary `x[dt,u]` = 1 if user `u` is assigned date-task `dt` (task `t`). Eligible users of `t` only (`p > 0`).
+
+```
+ideal(u,t)    = p(u,t) / Σ_v p(v,t)          # fair share of the pool
+actual(u,t)   = count(u,t) / count(*,t)      # lifetime; 0 if none
+target(u,t)   = ideal(u,t) · p(u,t)          # personal modifier
+```
+
+`p` does not cancel: the term is `p²/Σp − actual`. `calculate_ideal_average` already uses `p/Σp`. The extra `* p` was added in ac85a7e as a “personal target modifier” (moved off `actual`, where low `p` inverted ranking). Stacked on weighted `ideal`, `p = 0.5` quarters the target, not halves it. Likely a mistake if `(0,1)` was meant as a single weight.
+
+If `actual < 0.05 · target`: `adjusted = actual + (target − actual) · U(0.9, 1.1)`. Else `adjusted = actual`. Cached per `(u,t)`. Pulls new people toward target so a 0 share does not flood them.
+
+Maximize:
+
+```
+Σ_{u,dt} [ target(u,t) − adjusted(u,t) ] · x[dt,u]
+```
+
+Under target → prefer assigning. Over target → avoid.
+
+Hard constraints (outside this sum): one person per slot, exclusions, no consecutive same-task weeks, monthly cap 7, lock filled cells.
+
+## Frontend
+
+Month grid: Django templates + `schedules/static/schedules/schedule.js` (vanilla JS, jQuery loaded). One HTML table; each hole is `assignment_cell.html` — `<input class="assignment-input" list="{{ task.id }}">`. One `<datalist id="{{ task.id }}">` per task (`month_schedule_datalists.html`) of eligible users.
+
+`MonthView.get` sorts each datalist by `AssignmentStats.assignment_delta` ascending (`(actual − ideal) / ideal`). Negative = under-assigned, first. Missing stats sort as `1` (bottom). This is **not** the same number as the LP term (`ideal * p − actual`). Enter in a cell autocompletes the first datalist option that matches the typed text, so list order is the manual-edit default.
+
+Also: drag-swap cells, debounced POST `update-assignments`, Generate, PDF, toggle per-person counts, clear. Overlay buttons in `month_schedule.html`.
+
+## Stack
+
+Django 5.1 · PostgreSQL · PuLP/CBC · vanilla JS · pdfkit
+
+## Key files
+
+- `schedules/services/scheduler.py` — ILP
+- `schedules/models.py` — domain
+- `schedules/views.py` / `static/schedules/schedule.js` — month UI
+- `users/models.py` — email login
+- `core/management/commands/` — seed from `core/fixtures/`
+
+## Commands
+
+```
+source venv/bin/activate && python manage.py test
+source venv/bin/activate && python manage.py runserver
+./manage.py seed_data
+```
+
+## Database
+
+Schema changes are **manual-approve only**. Do not run `makemigrations` or `migrate` unless the user has approved a written change. Propose the change first: fields, nullability, FKs, uniqueness, and what happens to existing rows — in SCHEMA.md and the relevant `docs/features/*.md`. After approval, one named migration. No autogenerated pile-ups, no silent rollbacks.
+
+Test and experiment rows must be **identifiable and deletable**: `Schedule.kind=experiment` + `experiment_id`, test users/emails with a reserved prefix (e.g. `test+…@`), never mixed into official history. Every writer of test data ships a cleanup that deletes only those rows. Assert production `Assignment` / official `Schedule` counts unchanged.
+
+See SCHEMA.md, AUDIT.md, ROADMAP.md, docs/features/.

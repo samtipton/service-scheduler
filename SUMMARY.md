@@ -34,11 +34,13 @@ Binary variables `x[(date_task, user)]` for every eligible (date, task, user) co
 
 #### Objective Function - Maximize Fairness
 
+Canonical definition: **CONTEXT.md** (Objective).
+
 ```
 maximize: Σ [ideal_avg(u, t) × preference(u, t) - adjusted_actual_avg(u, t)] × x[(dt, u)]
 ```
 
-The coefficient for each potential assignment is the gap between a user's *preference-scaled ideal* share and their *actual* share. Preference scales the ideal average, acting as a **personal target modifier** — a preference of 0.5 halves the user's target (assigned less), while 1.5 increases it by 50% (assigned more). Users who are **under-assigned** relative to their personal target get large positive coefficients (solver wants to assign them). Users who are **over-assigned** get negative coefficients (solver avoids them).
+`ideal` is already `pref / Σ pref`. Multiplying by `pref` again is the personal target modifier — `0.5` halves the target, `1.5` raises it 50%. Under target → assign; over target → avoid.
 
 #### Jitter for New Volunteers
 
