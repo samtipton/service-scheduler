@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, datetime, time, timedelta
 
 from django.test import TestCase
@@ -6,9 +6,12 @@ from django.utils import timezone
 from pulp import LpMaximize, lpSum
 
 from schedules.models import Assignment, Schedule, Service, Task, TaskPreference
-from schedules.services.objectives import CatchUpShareObjective
+from schedules.services.fairness import build_fairness_window
+from schedules.services.objectives import CatchUpShareObjective, FairJobsObjective
 from schedules.services.scheduler import DEFAULT_CONSTRAINT_NAMES, Scheduler
 from users.models import User
+
+JOINED = timezone.make_aware(datetime(2020, 1, 1))
 
 
 TEST_EMAIL = "test+{slug}@example.com"
@@ -33,13 +36,17 @@ class PreferUserObjective:
 
 
 class SchedulerFixtureMixin:
-    def _user(self, slug, first, last):
-        return User.objects.create_user(
+    def _user(self, slug, first, last, joined=None):
+        user = User.objects.create_user(
             email=TEST_EMAIL.format(slug=slug),
             first_name=first,
             last_name=last,
             password="x",
         )
+        if joined is not None:
+            User.objects.filter(pk=user.pk).update(date_joined=joined)
+            user.refresh_from_db()
+        return user
 
     def _sunday_world(self, task_id="song_leader"):
         self.creator = self._user("creator", "Test", "Creator")
@@ -133,6 +140,69 @@ class DateTaskCalendarTests(SchedulerFixtureMixin, TestCase):
         self.assertIn("2025-5-7-cal_wed", date_tasks)
         self.assertIn("2025-5-4-cal_week", date_tasks)
 
+    def test_weekly_pairs_with_sunday_of_same_week(self):
+        """April 2025 starts Tuesday: extra Wed-only weekly hole must not
+        zip onto the first Sunday."""
+        schedule = self._schedule(2025, 4)
+        services = list(Service.objects.prefetch_related("tasks").all())
+        scheduler = Scheduler(schedule, services)
+        pairs = scheduler.week_aligned_date_task_pairs(self.t1, self.t3)
+        pair_dates = {(a.date, b.date) for a, b in pairs}
+        self.assertEqual(
+            pair_dates,
+            {
+                ("2025-4-6", "2025-4-6"),
+                ("2025-4-13", "2025-4-13"),
+                ("2025-4-20", "2025-4-20"),
+                ("2025-4-27", "2025-4-27"),
+            },
+        )
+        wed_pairs = scheduler.week_aligned_date_task_pairs(self.t1, self.t2)
+        wed_dates = {(a.date, b.date) for a, b in wed_pairs}
+        self.assertEqual(
+            wed_dates,
+            {
+                ("2025-4-6", "2025-4-9"),
+                ("2025-4-13", "2025-4-16"),
+                ("2025-4-20", "2025-4-23"),
+                ("2025-4-27", "2025-4-30"),
+            },
+        )
+
+    def test_next_week_sound_board_and_opening_prayer_share_sunday(self):
+        """April 2025: week 1 is Wednesday-only (sound board Apr 2). The next
+        week sound board is dated Sunday Apr 6, same day as opening prayer.
+        Index-zip paired prayer Apr 6 with sound board Apr 2 instead.
+        """
+        prayer = Task.objects.create(
+            id="opening_prayer", name="Opening Prayer", service=self.sun, order=10
+        )
+        booth = Task.objects.create(
+            id="sound_board_operator",
+            name="Sound Board",
+            service=self.weekly,
+            order=11,
+        )
+        self._pref(self.alice, prayer)
+        self._pref(self.alice, booth)
+        schedule = self._schedule(2025, 4)
+        services = list(Service.objects.prefetch_related("tasks").all())
+        scheduler = Scheduler(schedule, services)
+        booth_dates = [dt.date for dt in scheduler.filter_date_tasks_by_task(
+            scheduler.date_tasks, booth
+        )]
+        prayer_dates = [dt.date for dt in scheduler.filter_date_tasks_by_task(
+            scheduler.date_tasks, prayer
+        )]
+        self.assertEqual(booth_dates[0], "2025-4-2")
+        self.assertEqual(booth_dates[1], "2025-4-6")
+        self.assertEqual(prayer_dates[0], "2025-4-6")
+        pairs = scheduler.week_aligned_date_task_pairs(prayer, booth)
+        pair_dates = {(a.date, b.date) for a, b in pairs}
+        self.assertIn(("2025-4-6", "2025-4-6"), pair_dates)
+        self.assertNotIn(("2025-4-6", "2025-4-2"), pair_dates)
+        self.assertNotIn(("2025-4-2", "2025-4-6"), pair_dates)
+
 
 class RealSolveTests(SchedulerFixtureMixin, TestCase):
     def test_catch_up_gives_extra_slot_to_most_behind(self):
@@ -148,13 +218,62 @@ class RealSolveTests(SchedulerFixtureMixin, TestCase):
 
         schedule = self._schedule(2025, 5)
         services = list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
-        result, assignments = Scheduler(schedule, services).solve()
+        result, assignments = Scheduler(
+            schedule, services, objective=CatchUpShareObjective()
+        ).solve()
         self.assertNotEqual(result, -1)
         self.assertEqual(len(assignments), 4)
         counts = Counter(assignments.values())
         self.assertEqual(counts["Test, Carol"], 2)
         self.assertEqual(counts["Test, Alice"], 1)
         self.assertEqual(counts["Test, Bob"], 1)
+
+    def test_exclusion_blocks_weekly_and_sunday_same_week(self):
+        """Prefer Alice for both; she must not hold Sunday + weekly that week."""
+        self.creator = self._user("creator", "Test", "Creator")
+        sun = Service.objects.create(
+            name="Sunday", day_of_week=0, start_time=time(9, 0)
+        )
+        weekly = Service.objects.create(
+            name="Weekly", day_of_week=None, start_time=time(0, 0)
+        )
+        prayer = Task.objects.create(
+            id="ex_prayer", name="Prayer", service=sun, order=1
+        )
+        security = Task.objects.create(
+            id="ex_security", name="Security", service=weekly, order=2
+        )
+        prayer.excludes.add(security)
+        security.excludes.add(prayer)
+        alice = self._user("alice", "Alice", "Test")
+        bob = self._user("bob", "Bob", "Test")
+        carol = self._user("carol", "Carol", "Test")
+        for user in (alice, bob, carol):
+            self._pref(user, prayer)
+            self._pref(user, security)
+
+        schedule = self._schedule(2025, 4)
+        services = list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
+        result, assignments = Scheduler(
+            schedule, services, objective=PreferUserObjective(alice)
+        ).solve()
+        self.assertNotEqual(result, -1)
+        alice_name = alice.inverted_name()
+        alice_days = defaultdict(set)
+        for date_task_str, name in assignments.items():
+            if name != alice_name:
+                continue
+            date_str, task_id = date_task_str.rsplit("-", 1)
+            year, month, day = (int(p) for p in date_str.split("-"))
+            week = date(year, month, day) - timedelta(
+                days=(date(year, month, day).weekday() + 1) % 7
+            )
+            alice_days[week].add(task_id)
+        for week, task_ids in alice_days.items():
+            self.assertFalse(
+                {"ex_prayer", "ex_security"} <= task_ids,
+                f"Alice held both on week of {week}: {task_ids}",
+            )
 
     def test_stub_objective_prefers_named_user(self):
         self._sunday_world()
@@ -223,3 +342,88 @@ class RealSolveTests(SchedulerFixtureMixin, TestCase):
         services = list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
         with self.assertRaises(ValueError):
             Scheduler(schedule, services, constraint_names=("not_a_rule",))
+
+
+class FairJobsTests(SchedulerFixtureMixin, TestCase):
+    def _people(self, n):
+        return [
+            self._user(f"u{i}", f"User{i}", "Test", joined=JOINED) for i in range(n)
+        ]
+
+    def _services(self):
+        return list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
+
+    def test_abundance_four_distinct_people(self):
+        self._sunday_world()
+        people = self._people(8)
+        for user in people:
+            self._pref(user, self.task)
+        schedule = self._schedule(2025, 5)
+        result, assignments = Scheduler(
+            schedule, self._services(), objective=FairJobsObjective()
+        ).solve()
+        self.assertNotEqual(result, -1)
+        self.assertEqual(len(assignments), 4)
+        counts = Counter(assignments.values())
+        self.assertEqual(len(counts), 4)
+        self.assertTrue(all(n == 1 for n in counts.values()))
+
+    def test_behind_on_six_tasks_does_not_get_six_jobs(self):
+        self._sunday_world()
+        people = self._people(8)
+        tasks = [self.task]
+        for i in range(5):
+            tasks.append(
+                Task.objects.create(
+                    id=f"t{i}", name=f"Task {i}", service=self.service, order=i + 2
+                )
+            )
+        for user in people:
+            for task in tasks:
+                self._pref(user, task)
+        bob = people[0]
+        for other in people[1:]:
+            for task in tasks:
+                self._history(other, task, date(2025, 4, 6), n=4)
+
+        schedule = self._schedule(2025, 5)
+        result, assignments = Scheduler(
+            schedule, self._services(), objective=FairJobsObjective()
+        ).solve()
+        self.assertNotEqual(result, -1)
+        bob_jobs = sum(1 for name in assignments.values() if name == bob.inverted_name())
+        self.assertLess(bob_jobs, 6)
+        self.assertGreater(bob_jobs, 0)
+
+    def test_p2_ranks_ahead_of_p1_when_both_even(self):
+        self._sunday_world()
+        people = self._people(8)
+        self._pref(people[0], self.task, value=2.0)
+        for user in people[1:]:
+            self._pref(user, self.task, value=1.0)
+        schedule = self._schedule(2025, 5)
+        window = build_fairness_window(schedule, self._services(), people)
+        keys = [window.ranking_key(u.pk, self.task.id) for u in people]
+        self.assertLess(keys[0], min(keys[1:]))
+
+        result, assignments = Scheduler(
+            schedule, self._services(), objective=FairJobsObjective()
+        ).solve()
+        self.assertNotEqual(result, -1)
+        self.assertIn(people[0].inverted_name(), assignments.values())
+
+    def test_new_person_virtual_count_is_near_even(self):
+        self._sunday_world()
+        people = self._people(8)
+        for user in people:
+            self._pref(user, self.task)
+        veterans = people[1:]
+        for user in veterans:
+            self._history(user, self.task, date(2025, 4, 6), n=5)
+        bob = people[0]
+        schedule = self._schedule(2025, 5)
+        window = build_fairness_window(schedule, self._services(), people + [self.creator])
+        key = window.ranking_key(bob.pk, self.task.id)
+        raw_behind = 0 - window.target[(bob.pk, self.task.id)]
+        self.assertGreater(key, raw_behind)
+        self.assertLess(abs(key), abs(raw_behind) / 2)

@@ -1,6 +1,6 @@
 from collections import OrderedDict, defaultdict
 from datetime import date, datetime, timedelta
-from itertools import chain, zip_longest
+from itertools import chain
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count
@@ -8,7 +8,7 @@ from pulp import LpVariable, LpProblem, lpSum, PULP_CBC_CMD, LpStatus
 
 from schedules.models import Assignment, Schedule, Service, Task, TaskPreference
 from schedules.services.datetask import DateTask
-from schedules.services.objectives import CatchUpShareObjective
+from schedules.services.objectives import get_objective
 from schedules.utils import (
     get_service_day,
     get_month_calendar,
@@ -41,7 +41,7 @@ class Scheduler:
     ):
         self.max_assignments = 7
         self.schedule = schedule
-        self.objective = objective or CatchUpShareObjective()
+        self.objective = get_objective(objective)
         self.constraint_names = tuple(constraint_names or DEFAULT_CONSTRAINT_NAMES)
         unknown = [n for n in self.constraint_names if n not in CONSTRAINTS]
         if unknown:
@@ -101,8 +101,11 @@ class Scheduler:
         return prefs
 
     def _preference_totals(self):
+        active = {user.pk for user in self.users}
         totals = defaultdict(float)
-        for task_prefs in self.user_task_preferences.values():
+        for user_id, task_prefs in self.user_task_preferences.items():
+            if user_id not in active:
+                continue
             for task_id, pref in task_prefs.items():
                 if pref.value > 0:
                     totals[task_id] += pref.value
@@ -366,32 +369,27 @@ class Scheduler:
         return exclusions
 
     def week_aligned_date_task_pairs(self, task1: Task, task2: Task):
+        """Pairs of holes that fall in the same Sunday-start week.
+
+        Weekly tasks are dated as the first service day of the week, so a
+        Wednesday-only week has a weekly hole and no Sunday hole. Pairing by
+        list index shifted those weekly holes onto the next Sunday. Pair by
+        week instead.
         """
-        need to pad start to get weekly duties to align correctly
-        otherwise we exclude tasks in different weeks
-        """
-        date_tasks1 = self.filter_date_tasks_by_task(self.date_tasks, task1)
-        date_tasks2 = self.filter_date_tasks_by_task(self.date_tasks, task2)
-
-        if len(date_tasks1) != len(date_tasks2):
-            task1weekly = task1.service.day_of_week is None
-            task2weekly = task2.service.day_of_week is None
-
-            if task1weekly ^ task2weekly:
-                weekly_date_tasks = date_tasks1 if task1weekly else date_tasks2
-                daily_date_tasks = date_tasks2 if task1weekly else date_tasks1
-
-                if (
-                    len(weekly_date_tasks) > len(daily_date_tasks)
-                    and int(daily_date_tasks[0].day_of_week)
-                    not in self.month_calendar[0]
-                ):
-                    daily_date_tasks = [0, *daily_date_tasks]
-
-                date_tasks1 = daily_date_tasks
-                date_tasks2 = weekly_date_tasks
-
-        return zip_longest(date_tasks1, date_tasks2, fillvalue=0)
+        by_week1 = {
+            dt.week_sunday: dt
+            for dt in self.filter_date_tasks_by_task(self.date_tasks, task1)
+        }
+        by_week2 = {
+            dt.week_sunday: dt
+            for dt in self.filter_date_tasks_by_task(self.date_tasks, task2)
+        }
+        pairs = []
+        for week in by_week1.keys() & by_week2.keys():
+            left, right = by_week1[week], by_week2[week]
+            if left != right:
+                pairs.append((left, right))
+        return pairs
 
     def filter_date_tasks_by_task(
         self, date_tasks: list[DateTask], task_id_or_task: str | Task

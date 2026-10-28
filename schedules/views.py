@@ -14,6 +14,12 @@ from django.shortcuts import get_object_or_404, render
 from django.contrib.auth import get_user_model
 from config.settings import BASE_DIR
 from schedules.models import Assignment, AssignmentStats, Schedule, Service, Task
+from schedules.services.fairness import build_fairness_window
+from schedules.services.objectives import (
+    CatchUpShareObjective,
+    FairJobsObjective,
+    get_objective,
+)
 from schedules.services.scheduler import Scheduler
 from schedules.utils import (
     get_month_calendar,
@@ -66,15 +72,31 @@ class MonthView(generic.View):
                 assignment_key
             ] = assignment.user
 
+        objective_name = request.GET.get("objective", FairJobsObjective.name)
+        fairness_window = None
+        if objective_name == FairJobsObjective.name:
+            fairness_window = build_fairness_window(
+                schedule, services, get_user_model().objects.filter(is_active=True)
+            )
+
         # create map of eligible users for each task sorted by assignment delta
+        # or FairJobs ranking (count_so_far − target)
         eligible_users_for_task = defaultdict(list)
         for service in services:
             for task in service.tasks.all():
-                eligible_users = task.get_eligible_users()
-                sorted_users = sorted(
-                    eligible_users,
-                    key=lambda user: assignment_stats_map.get((task.id, user.pk), 1),
-                )
+                eligible_users = list(task.get_eligible_users())
+                if fairness_window is not None:
+                    sorted_users = sorted(
+                        eligible_users,
+                        key=lambda user, tid=task.id: fairness_window.ranking_key(
+                            user.pk, tid
+                        ),
+                    )
+                else:
+                    sorted_users = sorted(
+                        eligible_users,
+                        key=lambda user: assignment_stats_map.get((task.id, user.pk), 1),
+                    )
                 eligible_users_for_task[task.id] = sorted_users
         eligible_users_for_task.default_factory = None
 
@@ -89,6 +111,11 @@ class MonthView(generic.View):
             "service_assignments": service_assignments,
             "eligible_users_for_task": eligible_users_for_task,
             "col_span": len(service_weeks) + len(service_weeks) + 1,
+            "objective_name": objective_name,
+            "objective_choices": [
+                (FairJobsObjective.name, "Fair jobs"),
+                (CatchUpShareObjective.name, "Catch-up share (old)"),
+            ],
         }
         return render(request, "schedules/month_schedule.html", context)
 
@@ -118,9 +145,20 @@ def generate_schedule_assignments(request, id):
 
         # parse results from schedule and send to generate
         # Could also take assignments from schedule itself
-        assignment_map = json.loads(request.body) or {}
+        payload = json.loads(request.body) or {}
+        if "assignments" in payload or "objective" in payload:
+            assignment_map = payload.get("assignments") or {}
+            objective_name = payload.get("objective") or FairJobsObjective.name
+        else:
+            assignment_map = payload
+            objective_name = FairJobsObjective.name
 
-        scheduler = Scheduler(schedule, services, assignment_map)
+        scheduler = Scheduler(
+            schedule,
+            services,
+            assignment_map,
+            objective=get_objective(objective_name),
+        )
         result, assignment_map = scheduler.solve()
         print(f"schedule result: {result}")
 

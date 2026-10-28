@@ -21,12 +21,13 @@ Docs vs code vs stated requirements. Source of truth for AI: CONTEXT.md.
 - `User` is both volunteer and login.
 - `Task.time_period` duplicates `Service.day_of_week`.
 - `Assignment.assigned_at` is DateTime; no uniqueness.
+- `Schedule.is_official` is unused (to remove). Fairness reads Assignment dates.
 - `core` app is seed-only. Root `settings.py` is leftover. Deleted commands remain as `.pyc`.
 
 ## Docs / AI
-- README is install-only. SUMMARY.md is useful but drifts (preference, jitter, stats).
+- README is install-only. CONTEXT.md is the AI source of truth.
 - Scheduler tests are mocks; they do not solve a real month.
 - CSRF exempt on generate/update/clear/PDF. Duplicate `get_service_day` in utils and templatetags.
 
 ## UX (kept)
-Month grid, datalist, drag-swap, autosave, generate, PDF, assignment counts. Official-schedule is admin-only.
+Month grid, datalist, drag-swap, autosave, generate, PDF, assignment counts.

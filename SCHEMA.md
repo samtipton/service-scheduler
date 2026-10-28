@@ -39,7 +39,7 @@ erDiagram
     }
     Schedule {
         date date "month"
-        is_official bool
+        is_official bool "TO REMOVE unused"
     }
     Assignment {
         assigned_at datetime "should be date"
@@ -52,5 +52,3 @@ erDiagram
 ```
 
 **Derived / redundant:** `AssignmentStats` (recomputable from Assignment + preference). `Task.time_period` vs `Service.day_of_week`. Task self-exclusion. `Schedule.base_schedule` git-branching. No unique `(schedule, task, assigned_at)`. No `Church`. Volunteer = login User.
-
-Target shape is in ROADMAP.md.

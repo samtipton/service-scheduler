@@ -1,4 +1,6 @@
 import re
+from datetime import date, timedelta
+
 from schedules.models import Task
 
 
@@ -27,6 +29,17 @@ class DateTask:
     @property
     def day_of_week(self):
         return self.task.service.day_of_week
+
+    @property
+    def as_date(self) -> date:
+        year, month, day = (int(part) for part in self.date.split("-"))
+        return date(year, month, day)
+
+    @property
+    def week_sunday(self) -> date:
+        """Sunday that starts this service week (calendar first weekday)."""
+        d = self.as_date
+        return d - timedelta(days=(d.weekday() + 1) % 7)
 
     def __str__(self):
         return f"{self.date}-{self.task_id}"

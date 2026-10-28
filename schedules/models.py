@@ -11,7 +11,7 @@ from schedules.decorators import round_decimal
 
 class ScheduleManager(models.Manager):
     def get_latest_selected(self):
-        """Get the most recent selected schedule"""
+        """TO REMOVE: is_official is unused. History is Assignment rows."""
         return self.filter(is_official=True).order_by("-date").first()
 
     def create_from_base(self, name, date, user, base_schedule=None, description=None):
@@ -62,10 +62,10 @@ class Schedule(models.Model):
         help_text="Previous schedule this one builds upon",
     )
 
-    # Whether this schedule has been selected as the official one
+    # TO REMOVE: unused. History and fairness read Assignment rows.
     is_official = models.BooleanField(
         default=False,
-        help_text="Whether this schedule is selected as the official schedule for the month",
+        help_text="TO REMOVE: unused. History is Assignment rows.",
     )
 
     objects = ScheduleManager()
@@ -84,7 +84,7 @@ class Schedule(models.Model):
         return user.pk == self.user_id or user.is_staff or user.is_superuser
 
     def select_as_official(self):
-        """Select this schedule as the official one for its month/year"""
+        """TO REMOVE: is_official is unused. History is Assignment rows."""
         month_start = date(self.date.year, self.date.month, 1)
         month_end = date(
             self.date.year + (self.date.month // 12), ((self.date.month % 12) + 1), 1

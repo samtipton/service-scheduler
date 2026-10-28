@@ -77,14 +77,17 @@ document.addEventListener("DOMContentLoaded", (event) => {
         }
       });
 
+      const objectiveSelect = document.getElementById("objective-select");
+      const objective = objectiveSelect ? objectiveSelect.value : "FairJobsObjective";
       await fetch(`generate`, {
         method: "POST",
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(
-          collectAssignments()
-        ),
+        body: JSON.stringify({
+          assignments: collectAssignments(),
+          objective: objective,
+        }),
       }).then((res) => {
         console.log(res);
         showToast("Done.");

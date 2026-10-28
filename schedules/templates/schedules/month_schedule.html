@@ -28,6 +28,12 @@ This template expects the following context variables:
 </head>
 <body>
     <div class="overlay mouse-reveal">
+        <label for="objective-select" class="objective-label">Objective</label>
+        <select id="objective-select">
+            {% for value, label in objective_choices %}
+            <option value="{{ value }}" {% if value == objective_name %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
         <button id="generate-assignments">Generate Assignments</button>
         <button id="download-pdf">Download PDF</button>
         <button id="toggle-assignment-count">Toggle Assignment Counts</button>
