@@ -5,8 +5,11 @@ document.addEventListener("DOMContentLoaded", (event) => {
     var lastValue = "";
     var toastEl = document.getElementById("toast");
     var assignmentFreqMap = new Map();
-    var lastAssignments = {};  // Track last known assignments
-    collectChangedAssignments();
+    var lastAssignments = {};
+    var saveInFlight = false;
+    var saveQueued = false;
+    var flushedOnLeave = false;
+    var SAVE_DELAY_MS = 400;
   
     function hideToast() {
       toastEl.style.opacity = "0.0";
@@ -26,40 +29,93 @@ document.addEventListener("DOMContentLoaded", (event) => {
       }, 1000);
     }
 
-    function collectAssignments() {
+    function focusedDutyKey() {
+      const input = document.activeElement;
+      if (!input || !input.classList.contains("assignment-input")) {
+        return null;
+      }
+      const cell = input.closest("td.duty-cell");
+      return cell ? cell.dataset.duty : null;
+    }
+
+    function datalistValues(input) {
+      const id = input.getAttribute("list");
+      const list = id ? document.getElementById(id) : null;
+      if (!list) {
+        return [];
+      }
+      return Array.from(list.options).map((el) => el.value);
+    }
+
+    function isKnownAssignee(input, value) {
+      return datalistValues(input).includes(value);
+    }
+
+    function inputForDuty(dutyKey) {
+      const cell = document.querySelector(
+        `td.duty-cell[data-duty="${dutyKey}"]`
+      );
+      return cell ? cell.querySelector("input.assignment-input") : null;
+    }
+
+    function collectAssignments(skipDuty) {
           return Array.from(document.querySelectorAll('td.duty-cell'))
             .reduce((obj, cell) => {
               const input = cell.querySelector('input.assignment-input');
-              if (input && input.value && cell.dataset.duty) {
-                obj[cell.dataset.duty] = input.value;
+              if (!input || !cell.dataset.duty || cell.dataset.duty === skipDuty) {
+                return obj;
+              }
+              const raw =
+                input === document.activeElement
+                  ? input.value || input.getAttribute("placeholder") || ""
+                  : input.value;
+              if (raw) {
+                obj[cell.dataset.duty] = raw;
               }
               return obj;
             }, {})
     }
 
-    function collectChangedAssignments() {
-      const currentAssignments = collectAssignments();
+    function collectChangedAssignments(options) {
+      const skipDuty =
+        options && options.includeFocused ? null : focusedDutyKey();
+      const currentAssignments = collectAssignments(skipDuty);
       const changedAssignments = {};
-      
-      // Find assignments that are new or changed
+
       for (const [dutyKey, value] of Object.entries(currentAssignments)) {
-        if (lastAssignments[dutyKey] !== value) {
-          changedAssignments[dutyKey] = value;
+        if (lastAssignments[dutyKey] === value) {
+          continue;
         }
+        const input = inputForDuty(dutyKey);
+        if (!input || !isKnownAssignee(input, value)) {
+          continue;
+        }
+        changedAssignments[dutyKey] = value;
       }
-      
-      // Find assignments that were removed
-      for (const [dutyKey, value] of Object.entries(lastAssignments)) {
+
+      for (const dutyKey of Object.keys(lastAssignments)) {
+        if (dutyKey === skipDuty) {
+          continue;
+        }
         if (!(dutyKey in currentAssignments)) {
-          changedAssignments[dutyKey] = null;  // Use null to indicate removal
+          changedAssignments[dutyKey] = null;
         }
       }
-      
-      // Update lastAssignments for next comparison
-      lastAssignments = {...currentAssignments};
-      
+
       return changedAssignments;
     }
+
+    function markAssignmentsSaved(payload) {
+      for (const [dutyKey, value] of Object.entries(payload)) {
+        if (value === null) {
+          delete lastAssignments[dutyKey];
+        } else {
+          lastAssignments[dutyKey] = value;
+        }
+      }
+    }
+
+    lastAssignments = collectAssignments();
 
     // TODO break functions into other files
     async function generateAssignments() {
@@ -120,6 +176,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
               updateAssignedCount();
             });
           }
+          lastAssignments = collectAssignments();
         }).catch(error => {
           // Hide skeletons and show inputs on error
           document.querySelectorAll('.skeleton').forEach(skeleton => {
@@ -153,6 +210,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
             assignment.placeholder = "";
             assignment.setAttribute("placeholder", "");
           });
+          lastAssignments = {};
         }
       });
       showToast("Clearing assignments...");
@@ -163,22 +221,72 @@ document.addEventListener("DOMContentLoaded", (event) => {
         window.clearTimeout(saveTimer);
         saveTimer = null;
       }
-  
-      saveTimer = setTimeout(async function () {
-        await fetch("update", {
+
+      saveTimer = setTimeout(function () {
+        flushSave();
+      }, SAVE_DELAY_MS);
+      showToast("Saving...");
+    }
+
+    function saveOnLeave() {
+      if (flushedOnLeave) {
+        return;
+      }
+      flushedOnLeave = true;
+      if (saveTimer) {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      flushSave({ keepalive: true, includeFocused: true });
+    }
+
+    async function flushSave(options) {
+      options = options || {};
+      if (saveInFlight && !options.keepalive) {
+        saveQueued = true;
+        return;
+      }
+      const payload = collectChangedAssignments({
+        includeFocused: options.includeFocused,
+      });
+      if (Object.keys(payload).length === 0) {
+        if (saveQueued) {
+          saveQueued = false;
+          saveAfterDelay();
+        }
+        return;
+      }
+      saveInFlight = true;
+      try {
+        const res = await fetch("update", {
           method: "PUT",
           headers: {
-            'Content-Type': 'application/json'
+            "Content-Type": "application/json",
           },
-          body: JSON.stringify(collectChangedAssignments()),
-        }).then((res) => {
-          if (res.status === 204) {
-            showToast("Saved");
-            updateAssignedCount();
-          }
+          body: JSON.stringify(payload),
+          keepalive: !!options.keepalive,
         });
-      }, 2000);
-      showToast("Saving...");
+        if (options.keepalive) {
+          return;
+        }
+        if (res.status === 204) {
+          markAssignmentsSaved(payload);
+          showToast("Saved");
+          updateAssignedCount();
+        } else {
+          showToast("Save failed");
+        }
+      } catch (err) {
+        if (!options.keepalive) {
+          showToast("Save failed");
+        }
+      } finally {
+        saveInFlight = false;
+        if (saveQueued && !options.keepalive) {
+          saveQueued = false;
+          saveAfterDelay();
+        }
+      }
     }
   
     function toggleAssignmentCountVisibility() {
@@ -391,6 +499,9 @@ document.addEventListener("DOMContentLoaded", (event) => {
 
     document.getElementById("generate-assignments").onclick = generateAssignments;
 
+    window.addEventListener("pagehide", saveOnLeave);
+    window.addEventListener("beforeunload", saveOnLeave);
+
   
     function setupInputEventListeners(input) {
       input.addEventListener("change", function (e) {
@@ -438,12 +549,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
     }
   
     function autocompleteDatalist(input) {
-      const datalist = input.getAttribute("list");
-      const options = Array.from(
-        document.querySelector(`datalist#${datalist}`).options
-      ).map(function (el) {
-        return el.value;
-      });
+      const options = datalistValues(input);
       var relevantOptions = options.filter(function (option) {
         return option.toLowerCase().includes(input.value.toLowerCase());
       });

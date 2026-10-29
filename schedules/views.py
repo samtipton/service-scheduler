@@ -169,30 +169,20 @@ def generate_schedule_assignments(request, id):
 
 def update_assignments_in_schedule(schedule: Schedule, assignment_map: dict[str, str]):
     """update assignments in database"""
-    # extract first names and last names from assignment map
-    first_names = []
-    last_names = []
     assignment_to_delete = []
+    user_map = {
+        user.inverted_name(): user for user in get_user_model().objects.all()
+    }
 
-    # filter out bad inputs:
-    for date_task_str, user_name_inverted in assignment_map.items():
-        if user_name_inverted is None:
+    # Copy so we never mutate the caller's dict while iterating.
+    assignment_map = dict(assignment_map)
+    for date_task_str, user_name in list(assignment_map.items()):
+        if user_name is None:
             assignment_to_delete.append(date_task_str)
-        elif "," not in user_name_inverted:
-            # TODO let frontend detect partial user  name input
-            # partial input save, let next save do update
-            del assignment_map[date_task_str]
-        else:
-            first_names.append(user_name_inverted.split(", ")[1])
-            last_names.append(user_name_inverted.split(", ")[0])
-
-    # get users in batch, create map of user inverted name to user
-    # TODO filter by group
-    # TODO there is a better way to do this
-    users = get_user_model().objects.filter(
-        first_name__in=first_names, last_name__in=last_names
-    )
-    user_map = {user.inverted_name(): user for user in users}
+            assignment_map.pop(date_task_str, None)
+        elif user_name not in user_map:
+            # Unknown or still typing. User.inverted_name() is the wire format.
+            assignment_map.pop(date_task_str, None)
 
     # get tasks in batch, create map of task id to task
     # TODO add schedule to service model

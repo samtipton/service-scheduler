@@ -1,4 +1,5 @@
 import datetime
+import json
 from datetime import time
 from decimal import Decimal
 from django.db import IntegrityError
@@ -854,3 +855,82 @@ class DeleteScheduleViewTests(TestCase):
         )
         self.assertTrue(User.objects.filter(id=self.user.id).exists())
         self.assertTrue(Task.objects.filter(id=task.id).exists())
+
+
+class UpdateScheduleTests(TestCase):
+    def setUp(self):
+        self.jay = User.objects.create_user(
+            email="test+jay@example.com",
+            first_name="Jay",
+            last_name="Ledbetter",
+            password="x",
+        )
+        self.brady = User.objects.create_user(
+            email="test+brady@example.com",
+            first_name="Brady",
+            last_name="McAlister",
+            password="x",
+        )
+        service = Service.objects.create(
+            name="Wednesday", day_of_week=3, start_time=datetime.time(19, 0)
+        )
+        self.task = Task.objects.create(
+            id="wednesday_lesson", name="Lesson", service=service, order=1
+        )
+        self.schedule = Schedule.objects.create(
+            name="Dec 2026",
+            date=datetime.date(2026, 12, 1),
+            user=self.jay,
+        )
+        self.client.force_login(self.jay)
+
+    def test_partial_name_does_not_drop_complete_names(self):
+        from schedules.views import update_assignments_in_schedule
+
+        update_assignments_in_schedule(
+            self.schedule,
+            {
+                "2026-12-23-wednesday_lesson": "Ledbetter, Jay",
+                "2026-12-30-wednesday_lesson": "b",
+            },
+        )
+        assignments = list(Assignment.objects.filter(schedule=self.schedule))
+        self.assertEqual(len(assignments), 1)
+        self.assertEqual(assignments[0].user, self.jay)
+        self.assertEqual(assignments[0].task, self.task)
+
+    def test_put_partial_name_returns_204(self):
+        response = self.client.put(
+            f"/schedules/{self.schedule.id}/update",
+            data=json.dumps(
+                {
+                    "2026-12-23-wednesday_lesson": "Ledbetter, Jay",
+                    "2026-12-30-wednesday_lesson": "b",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(
+            Assignment.objects.filter(schedule=self.schedule).count(), 1
+        )
+        self.assertEqual(
+            Assignment.objects.get(schedule=self.schedule).user, self.jay
+        )
+
+    def test_unknown_name_is_skipped(self):
+        from schedules.views import update_assignments_in_schedule
+
+        update_assignments_in_schedule(
+            self.schedule,
+            {
+                "2026-12-23-wednesday_lesson": self.jay.inverted_name(),
+                "2026-12-30-wednesday_lesson": "Not A User",
+            },
+        )
+        self.assertEqual(
+            Assignment.objects.filter(schedule=self.schedule).count(), 1
+        )
+        self.assertEqual(
+            Assignment.objects.get(schedule=self.schedule).user, self.jay
+        )
