@@ -7,7 +7,14 @@ from django.test import TestCase
 from django.utils import timezone
 from pulp import LpMaximize, lpSum
 
-from schedules.models import Assignment, Schedule, Service, Task, TaskPreference
+from schedules.models import (
+    Assignment,
+    Schedule,
+    Service,
+    Task,
+    TaskPreference,
+    TaskRequires,
+)
 from schedules.services.datetask import DateTask
 from schedules.services.fairness import build_fairness_window
 from schedules.services.objectives import (
@@ -596,3 +603,106 @@ class RotationGroupTests(SchedulerFixtureMixin, TestCase):
                 self.assertEqual(
                     Task.objects.get(pk=task_id).rotation_group, group, task_id
                 )
+
+
+class TaskRequiresTests(SchedulerFixtureMixin, TestCase):
+    """Person-specific: if assigned task, also assign requires the same week."""
+
+    def _world(self):
+        self.creator = self._user("creator", "Test", "Creator")
+        self.sun = Service.objects.create(
+            name="Sunday", day_of_week=0, start_time=time(9, 0)
+        )
+        self.security = Task.objects.create(
+            id="rq_security", name="Security", service=self.sun, order=1
+        )
+        self.usher = Task.objects.create(
+            id="rq_usher", name="Usher", service=self.sun, order=2
+        )
+        self.security.excludes.add(self.usher)
+        return self.security, self.usher
+
+    def _services(self):
+        return list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
+
+    def _week_pairs(self, assignments, name):
+        by_week = defaultdict(set)
+        for date_task_str, assigned in assignments.items():
+            if assigned != name:
+                continue
+            date_str, task_id = date_task_str.rsplit("-", 1)
+            year, month, day = (int(p) for p in date_str.split("-"))
+            on = date(year, month, day)
+            week = on - timedelta(days=(on.weekday() + 1) % 7)
+            by_week[week].add(task_id)
+        return by_week
+
+    def test_requires_takes_usher_with_security(self):
+        self._world()
+        alice = self._user("alice", "Alice", "Test", joined=JOINED)
+        bob = self._user("bob", "Bob", "Test", joined=JOINED)
+        carol = self._user("carol", "Carol", "Test", joined=JOINED)
+        for user in (alice, bob, carol):
+            self._pref(user, self.security)
+            self._pref(user, self.usher)
+        TaskRequires.objects.create(
+            user=alice, task=self.security, requires=self.usher
+        )
+        schedule = self._schedule(2025, 4)
+        result, assignments = Scheduler(
+            schedule, self._services(), objective=PreferUserObjective(alice)
+        ).solve()
+        self.assertNotEqual(result, -1)
+        alice_weeks = self._week_pairs(assignments, alice.inverted_name())
+        security_weeks = [w for w, ids in alice_weeks.items() if "rq_security" in ids]
+        self.assertGreater(len(security_weeks), 0)
+        for week in security_weeks:
+            self.assertIn("rq_usher", alice_weeks[week])
+
+    def test_other_person_still_cannot_hold_both(self):
+        self._world()
+        alice = self._user("alice", "Alice", "Test", joined=JOINED)
+        bob = self._user("bob", "Bob", "Test", joined=JOINED)
+        carol = self._user("carol", "Carol", "Test", joined=JOINED)
+        for user in (alice, bob, carol):
+            self._pref(user, self.security)
+            self._pref(user, self.usher)
+        TaskRequires.objects.create(
+            user=alice, task=self.security, requires=self.usher
+        )
+        schedule = self._schedule(2025, 4)
+        result, assignments = Scheduler(
+            schedule, self._services(), objective=PreferUserObjective(bob)
+        ).solve()
+        self.assertNotEqual(result, -1)
+        bob_weeks = self._week_pairs(assignments, bob.inverted_name())
+        for week, ids in bob_weeks.items():
+            self.assertFalse(
+                {"rq_security", "rq_usher"} <= ids,
+                f"Bob held both on week of {week}: {ids}",
+            )
+
+    def test_usher_without_security_is_allowed(self):
+        self._world()
+        alice = self._user("alice", "Alice", "Test", joined=JOINED)
+        bob = self._user("bob", "Bob", "Test", joined=JOINED)
+        carol = self._user("carol", "Carol", "Test", joined=JOINED)
+        for user in (alice, bob, carol):
+            self._pref(user, self.security)
+            self._pref(user, self.usher)
+        TaskRequires.objects.create(
+            user=alice, task=self.security, requires=self.usher
+        )
+        schedule = self._schedule(2025, 4)
+        result, assignments = Scheduler(
+            schedule,
+            self._services(),
+            locked_in_assignments={
+                "2025-4-6-rq_usher": alice.inverted_name(),
+                "2025-4-6-rq_security": bob.inverted_name(),
+            },
+            objective=PreferUserObjective(bob),
+        ).solve()
+        self.assertNotEqual(result, -1)
+        self.assertEqual(assignments.get("2025-4-6-rq_usher"), alice.inverted_name())
+        self.assertEqual(assignments.get("2025-4-6-rq_security"), bob.inverted_name())

@@ -6,7 +6,14 @@ from django.contrib.auth import get_user_model
 from django.db.models import Count
 from pulp import LpVariable, LpProblem, lpSum, PULP_CBC_CMD, LpStatus
 
-from schedules.models import Assignment, Schedule, Service, Task, TaskPreference
+from schedules.models import (
+    Assignment,
+    Schedule,
+    Service,
+    Task,
+    TaskPreference,
+    TaskRequires,
+)
 from schedules.services.datetask import DateTask
 from schedules.services.objectives import get_objective
 from schedules.utils import (
@@ -21,6 +28,7 @@ CONSTRAINTS = {
     "past_assignments": "constrain_past_assignments",
     "one_person_per_task": "constrain_one_person_per_task",
     "do_not_assign_excluded_tasks": "constrain_do_not_assign_excluded_tasks",
+    "task_requires": "constrain_task_requires",
     "do_not_over_assign_same_task": "constrain_do_not_over_assign_same_task",
     "month_boundary_assignments": "constrain_month_boundary_assignments",
     "total_assignments": "constrain_total_assignments",
@@ -86,6 +94,16 @@ class Scheduler:
 
         self.tasks = self.get_tasks()
         self.task_exclusions = self.get_exclusions()
+        self.task_requires = list(
+            TaskRequires.objects.filter(user__is_active=True).select_related(
+                "user", "task", "requires"
+            )
+        )
+        self.task_requires_pairs = defaultdict(set)
+        for req in self.task_requires:
+            self.task_requires_pairs[req.user_id].add(
+                frozenset({req.task_id, req.requires_id})
+            )
         self.eligibility = self.get_eligiblity()
         self.user_task_preferences = self._load_preferences()
         self.preference_totals = self._preference_totals()
@@ -236,6 +254,10 @@ class Scheduler:
     def constrain_do_not_assign_excluded_tasks(self):
         for task1, task2 in self.task_exclusions:
             for user in self.users:
+                if frozenset({task1.id, task2.id}) in self.task_requires_pairs.get(
+                    user.pk, ()
+                ):
+                    continue
                 if self.is_eligible(user, task1) and self.is_eligible(user, task2):
                     for ineligible_pair in self.week_aligned_date_task_pairs(
                         task1, task2
@@ -249,6 +271,31 @@ class Scheduler:
                                 + self.x[(ineligible_pair[1], user)]
                                 <= 1
                             )
+
+    def constrain_task_requires(self):
+        """If this person takes `task`, they also take `requires` that week."""
+        for req in self.task_requires:
+            user = req.user
+            trigger_dts = self.filter_date_tasks_by_task(self.date_tasks, req.task)
+            if not self.is_eligible(user, req.requires):
+                for trigger_dt in trigger_dts:
+                    if (trigger_dt, user) in self.x:
+                        self.prob += self.x[(trigger_dt, user)] == 0
+                continue
+            paired_triggers = set()
+            for trigger_dt, required_dt in self.week_aligned_date_task_pairs(
+                req.task, req.requires
+            ):
+                paired_triggers.add(trigger_dt)
+                if (trigger_dt, user) in self.x and (required_dt, user) in self.x:
+                    self.prob += (
+                        self.x[(trigger_dt, user)] <= self.x[(required_dt, user)]
+                    )
+            for trigger_dt in trigger_dts:
+                if trigger_dt in paired_triggers:
+                    continue
+                if (trigger_dt, user) in self.x:
+                    self.prob += self.x[(trigger_dt, user)] == 0
 
     def constrain_do_not_over_assign_same_task(self):
         for task in self.tasks:

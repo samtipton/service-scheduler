@@ -438,6 +438,31 @@ class TaskPreference(models.Model):
     objects = TaskPreferenceManager()
 
 
+class TaskRequires(models.Model):
+    """When this person is assigned `task`, also assign `requires` the same week.
+
+    Skips the exclusion between those two tasks for this person only.
+    Directional: they can still hold `requires` without `task`.
+    """
+
+    user = models.ForeignKey(
+        get_user_model(), on_delete=models.CASCADE, related_name="task_requires"
+    )
+    task = models.ForeignKey(
+        Task, on_delete=models.CASCADE, related_name="requirements"
+    )
+    requires = models.ForeignKey(
+        Task, on_delete=models.CASCADE, related_name="required_by"
+    )
+
+    class Meta:
+        unique_together = ["user", "task", "requires"]
+        verbose_name_plural = "task requires"
+
+    def __str__(self):
+        return f"{self.user_id}: {self.task_id} requires {self.requires_id}"
+
+
 class AssignmentStats(models.Model):
     DECIMAL_PLACES = 8
     MAX_DIGITS = 8 + DECIMAL_PLACES

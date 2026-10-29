@@ -86,6 +86,9 @@ erDiagram
     Task ||--o{ TaskPreference : preferred
     Task ||--o{ AssignmentStats : stats
     Task }o--o{ Task : excludes
+    User ||--o{ TaskRequires : when_assigned
+    Task ||--o{ TaskRequires : task
+    Task ||--o{ TaskRequires : requires
     Schedule ||--o{ Assignment : contains
     Schedule }o--o{ AssignmentStats : snapshots
     Schedule }o--o| Schedule : base_schedule
@@ -111,6 +114,10 @@ erDiagram
     TaskPreference {
         value float ">=0; 0 ineligible; 1 baseline; >1 want more"
     }
+    TaskRequires {
+        task string "trigger"
+        requires string "also assign same week"
+    }
     Schedule {
         date date "month"
         is_official bool "TO REMOVE unused"
@@ -128,10 +135,11 @@ erDiagram
 - **Service** — recurring event. `day_of_week` 0=Sunday; `null` = week-level.
 - **Task** — role on a service. Symmetric `excludes` (cannot hold both in the same week); each task also excludes itself on save. `rotation_group` is a shared label for adjacent-week FairJobs rotation. Blank means no family. Migrate `0005` sets `song` (first/Sunday/Wednesday song leader), `prayer` (first/Sunday/Wednesday opening and closing), `lords_supper` (table lead/aid bread and cup).
 - **TaskPreference** — `0` ineligible, `(0,1)` below baseline, `1` baseline, `>1` want more.
+- **TaskRequires** — when this person is assigned `task`, also assign `requires` the same week. Skips that pair’s exclusion for them only. Directional. They need `p > 0` on both.
 - **Schedule** — one month. Optional `base_schedule` (previous month, git-style parent). `is_official` is unused; history is Assignment rows.
 - **Assignment** — person + task + datetime on a schedule. Source of truth for history and fairness. No unique `(schedule, task, assigned_at)`.
 - **AssignmentStats** — derived snapshot (`ideal_average`, `actual_average`, `assignment_delta`), M2M to schedules. Recomputable from Assignment + preference. Lifetime share. FairJobs does not read it.
 
 `Task.time_period` duplicates `Service.day_of_week`. `core` is seed-only.
 
-Planned: charts, multi-church isolation, publish email, reminders — `docs/features/`.
+Planned: charts, multi-church isolation, publish email, reminders, load — `docs/features/`.

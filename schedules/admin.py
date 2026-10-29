@@ -6,6 +6,7 @@ from .models import (
     Task,
     Assignment,
     TaskPreference,
+    TaskRequires,
     Schedule,
 )
 
@@ -15,6 +16,18 @@ class TaskPreferenceAdmin(admin.ModelAdmin):
     list_display = ("user", "task_id", "value")
 
     search_fields = ("user__first_name", "user__last_name", "task__name")
+
+
+@admin.register(TaskRequires)
+class TaskRequiresAdmin(admin.ModelAdmin):
+    list_display = ("user", "task", "requires")
+    list_filter = ("task", "requires")
+    search_fields = (
+        "user__first_name",
+        "user__last_name",
+        "task__id",
+        "requires__id",
+    )
 
 
 class TaskExcludesInline(admin.TabularInline):

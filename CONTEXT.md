@@ -4,12 +4,13 @@ Django app that assigns congregation men to recurring worship tasks with integer
 
 **Stack:** Django 5.1 · PostgreSQL · PuLP/CBC · vanilla JS · pdfkit
 
-Volunteers are login `User`s. Single congregation. Charts, multi-church isolation, publish-email, and reminders are planned: `docs/features/`.
+Volunteers are login `User`s. Single congregation. Charts, multi-church isolation, publish-email, reminders, and load (who gets leftover jobs) are planned: `docs/features/`.
 
 ## Domain
 
 - **Service** — recurring event (Sun 9:00, Sun 10:30, Wednesday, Weekly). `day_of_week` is 0=Sunday; `None` = week-level.
 - **Task** — role on a service. Symmetric `excludes` (cannot hold both in the same week). Each task also excludes itself on save.
+- **TaskRequires** — person-specific: when assigned `task`, also assign `requires` the same week. Skips that pair’s exclusion for this person only. Directional. Eligible (`p > 0`) for both.
 - **TaskPreference** `p(u,t) ≥ 0` — `0` never assign, `(0,1)` below baseline, `1` baseline, `>1` want more. No upper bound. A 1-task man on a crowded role (e.g. Lord’s supper aid) who wants more Sundays raises `p` on that task. Small pools (song leader) stay at `p = 1` so one specialist is not over-represented. Church-specific; not a solver special case.
 - **Schedule** — one month. Optional `base_schedule` (previous month). `is_official` is unused (to remove). History is Assignment rows.
 - **Assignment** — person + task + datetime on a schedule. Source of truth for history and fairness.
@@ -38,7 +39,8 @@ Same hard rules for both objectives. Binary `x[(date_task, user)]` for each elig
 |---|---|
 | Fill every hole | Exactly one person per date-task |
 | Eligible only | No variable if `p = 0` or inactive |
-| Exclusions | Cannot hold two excluding tasks in the same Sunday-start week (`x_a + x_b ≤ 1`). Weekly holes pair with that week’s Sunday/Wednesday, not by list index. |
+| Exclusions | Cannot hold two excluding tasks in the same Sunday-start week (`x_a + x_b ≤ 1`). Weekly holes pair with that week’s Sunday/Wednesday, not by list index. Skipped for a person who has `TaskRequires` on that pair. |
+| TaskRequires | If this person takes `task`, they take `requires` that week (`x_task ≤ x_requires`). They can still hold `requires` alone. |
 | Consecutive week | Same person, same task, two weeks in a row, including month boundary — skipped when the eligible pool is size 1 |
 | Rotation family (FairJobs) | Soft: `Task.rotation_group`. Jobs of that family in two neighboring Sunday-start weeks: at most one, plus spill. Cost `rotation_weight` per extra job. Includes the previous month via `base_schedule`. |
 | Per-task spread | At most one if people > slots; else each eligible person at least once, at most `⌈slots/people⌉` |

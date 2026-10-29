@@ -14,7 +14,14 @@ from django.contrib.auth import get_user_model
 from django.db import connection
 from django.utils import timezone
 
-from schedules.models import Assignment, Schedule, Service, Task, TaskPreference
+from schedules.models import (
+    Assignment,
+    Schedule,
+    Service,
+    Task,
+    TaskPreference,
+    TaskRequires,
+)
 from schedules.services.fairness import add_months
 
 COMPARE_FIXTURE_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "compare"
@@ -78,6 +85,7 @@ def _full_tables() -> list[str]:
         Task._meta.db_table,
         Task.excludes.through._meta.db_table,
         TaskPreference._meta.db_table,
+        TaskRequires._meta.db_table,
         Schedule._meta.db_table,
     ]
 
