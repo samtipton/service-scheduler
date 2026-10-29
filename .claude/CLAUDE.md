@@ -2,7 +2,7 @@
 
 Django app using ILP (PuLP/CBC) for fair volunteer scheduling.
 
-Read **CONTEXT.md** first (project root). Features: docs/features/. Then SCHEMA.md, AUDIT.md.
+Read **CONTEXT.md** first (project root). Features: docs/features/. Then README.md Models.
 
 ## Key Files
 - Scheduling algorithm: schedules/services/scheduler.py
@@ -16,4 +16,4 @@ Read **CONTEXT.md** first (project root). Features: docs/features/. Then SCHEMA.
 
 ## Conventions
 - CONTEXT.md is the AI source of truth (domain, objective, constraints, UI, commands).
-- Database schema: propose in SCHEMA.md / feature spec, wait for user approval, then migrate. Test data must be tagged and cleanable. See CONTEXT.md Database.
+- Database schema: propose in README.md Models / feature spec, wait for user approval, then migrate. Test data must be tagged and cleanable. See CONTEXT.md Database.

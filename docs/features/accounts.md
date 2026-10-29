@@ -2,7 +2,7 @@
 
 Thin isolation so production and experiments (and later, other congregations) do not share one global roster.
 
-
+Today: volunteer is the login `User`. Single congregation. `Service` has a commented `group` FK. No `Church` table.
 
 Group ~= church
 

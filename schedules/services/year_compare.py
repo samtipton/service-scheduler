@@ -3,12 +3,11 @@
     python manage.py compare_objectives
     python manage.py compare_objectives FairJobs
     python manage.py compare_objectives CatchUpShare FairJobs --months 6
-    python manage.py compare_objectives FairJobs --world default
     python manage.py dump_compare_db
     python manage.py compare_objectives FairJobs --dump
 
-Roster: schedules/fixtures/compare/*.toml (tiny fake world), or --dump to
-load live.sql (anonymized users, tasks, prefs, last year of assignments).
+Roster: a tiny Python world (load_compare_world), or --dump to load live.sql
+(anonymized users, tasks, prefs, last year of assignments).
 
 Uses a throwaway test database (see the management command). History is
 Assignment rows: month n is in the 12-month window for month n+1.
@@ -89,11 +88,9 @@ new person month-1 jobs
 """
 
 import random
-import tomllib
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
-from pathlib import Path
 from statistics import mean, median, pstdev
 
 from django.utils import timezone
@@ -112,9 +109,6 @@ DISPLAY_NAMES = {
     "FairJobsObjective": "Fair jobs",
     "CatchUpShareObjective": "Catch-up share",
 }
-COMPARE_FIXTURE_DIR = (
-    Path(__file__).resolve().parent.parent / "fixtures" / "compare"
-)
 
 
 def parse_datetask_date(value: str) -> date:
@@ -410,144 +404,64 @@ def _user(slug, first, last, joined=None):
     return user
 
 
-def available_worlds() -> list[str]:
-    if not COMPARE_FIXTURE_DIR.exists():
-        return []
-    return sorted(path.stem for path in COMPARE_FIXTURE_DIR.glob("*.toml"))
-
-
-def resolve_world_path(name: str | Path | None = None) -> Path:
-    """`default`, `crowded`, a stem, or a path to a .toml file."""
-    if name is None:
-        return COMPARE_FIXTURE_DIR / "default.toml"
-    path = Path(name)
-    if path.suffix == ".toml" and path.is_file():
-        return path
-    candidate = COMPARE_FIXTURE_DIR / f"{path.stem}.toml"
-    if candidate.is_file():
-        return candidate
-    known = ", ".join(available_worlds()) or "(none)"
-    raise ValueError(f"Unknown world {name!r}. TOML files in {COMPARE_FIXTURE_DIR}: {known}")
-
-
-def _parse_joined(value: str, start: date):
-    if value == "start":
-        on = start
-    else:
-        on = date.fromisoformat(value)
-    return timezone.make_aware(datetime(on.year, on.month, on.day))
-
-
-def _parse_time(value: str) -> time:
-    parts = [int(p) for p in value.split(":")]
-    return time(*parts)
-
-
-def load_compare_world(path: str | Path | None = None, start_override: date | None = None) -> CompareWorld:
-    """Build the throwaway roster from a TOML fixture. Not production people."""
-    path = resolve_world_path(path)
-    with path.open("rb") as handle:
-        data = tomllib.load(handle)
-
-    start = start_override or date.fromisoformat(str(data.get("start", START.isoformat())))
+def load_compare_world(start: date | None = None) -> CompareWorld:
+    """Tiny Sunday roster used by the command and the test. Not production people."""
+    start = start or START
     creator = _user("year-creator", "Year", "Creator", joined=JOINED)
-
-    services = {}
-    for row in data.get("services") or []:
-        services[row["key"]] = Service.objects.create(
-            name=row["name"],
-            day_of_week=row.get("day_of_week"),
-            start_time=_parse_time(row["start_time"]),
-        )
-
-    tasks = {}
-    for row in data.get("tasks") or []:
-        service = services.get(row["service"])
-        if service is None:
-            raise ValueError(f"{path}: task {row['id']!r} service {row['service']!r} is missing")
-        tasks[row["id"]] = Task.objects.create(
-            id=row["id"],
-            name=row["name"],
-            service=service,
-            order=row.get("order", 1),
-        )
-    for row in data.get("tasks") or []:
-        for other_id in row.get("excludes") or []:
-            if other_id not in tasks:
-                raise ValueError(f"{path}: task {row['id']!r} excludes unknown {other_id!r}")
-            tasks[row["id"]].excludes.add(tasks[other_id])
+    service = Service.objects.create(
+        name="Sunday AM", day_of_week=0, start_time=time(10, 0)
+    )
+    song = Task.objects.create(
+        id="yc_song", name="Song Leader", service=service, order=1
+    )
+    usher = Task.objects.create(
+        id="yc_usher", name="Usher", service=service, order=2
+    )
+    song.excludes.add(usher)
 
     people = {}
-    for row in data.get("people") or []:
-        people[row["slug"]] = _user(
-            row["slug"],
-            row["first"],
-            row["last"],
-            joined=_parse_joined(str(row.get("joined", "2020-01-01")), start),
+    for i in range(8):
+        joined = JOINED
+        if i == 7:
+            joined = timezone.make_aware(datetime(start.year, start.month, 1))
+        people[f"u{i}"] = _user(
+            f"year-u{i}", f"YearU{i}", "Test", joined=joined
         )
 
-    for row in data.get("prefs") or []:
-        if row["person"] not in people:
-            raise ValueError(f"{path}: pref person {row['person']!r} is missing")
-        if row["task"] not in tasks:
-            raise ValueError(f"{path}: pref task {row['task']!r} is missing")
-        TaskPreference.objects.create(
-            user=people[row["person"]],
-            task=tasks[row["task"]],
-            value=float(row["value"]),
-        )
+    TaskPreference.objects.create(user=people["u0"], task=song, value=2.0)
+    TaskPreference.objects.create(user=people["u1"], task=song, value=0.5)
+    for user in list(people.values())[2:]:
+        TaskPreference.objects.create(user=user, task=song, value=1.0)
+    for user in list(people.values())[:4]:
+        TaskPreference.objects.create(user=user, task=usher, value=1.0)
 
-    month_schedules = {}
-    for row in data.get("history") or []:
-        if row["person"] not in people:
-            raise ValueError(f"{path}: history person {row['person']!r} is missing")
-        if row["task"] not in tasks:
-            raise ValueError(f"{path}: history task {row['task']!r} is missing")
-        if "date" in row:
-            on = date.fromisoformat(str(row["date"]))
-        else:
-            month = add_months(start.year, start.month, -int(row.get("months_before_start", 1)))
-            on = date(month.year, month.month, int(row.get("day", 1)))
-        key = (on.year, on.month)
-        if key not in month_schedules:
-            month_schedules[key] = Schedule.objects.create(
-                name=f"history-{on.year}-{on.month:02d}",
-                date=date(on.year, on.month, 1),
-                user=creator,
-            )
-        Assignment.objects.create(
-            schedule=month_schedules[key],
-            task=tasks[row["task"]],
-            user=people[row["person"]],
-            assigned_at=timezone.make_aware(datetime(on.year, on.month, on.day)),
-        )
-
-    highlights = []
-    for row in data.get("highlights") or []:
-        if row["person"] not in people:
-            raise ValueError(f"{path}: highlight person {row['person']!r} is missing")
-        task = None
-        if row.get("task"):
-            if row["task"] not in tasks:
-                raise ValueError(f"{path}: highlight task {row['task']!r} is missing")
-            task = tasks[row["task"]]
-        highlights.append(
-            Highlight(
-                label=row["label"],
-                person=people[row["person"]],
-                task=task,
-                month1=bool(row.get("month1")),
-            )
-        )
+    hist_month = add_months(start.year, start.month, -1)
+    history = Schedule.objects.create(
+        name=f"history-{hist_month.year}-{hist_month.month:02d}",
+        date=hist_month,
+        user=creator,
+    )
+    Assignment.objects.create(
+        schedule=history,
+        task=song,
+        user=people["u2"],
+        assigned_at=timezone.make_aware(
+            datetime(hist_month.year, hist_month.month, 7)
+        ),
+    )
 
     return CompareWorld(
         creator=creator,
         people=people,
-        tasks=tasks,
-        highlights=highlights,
+        tasks={"yc_song": song, "yc_usher": usher},
+        highlights=[
+            Highlight("p=2 song jobs", people["u0"], task=song),
+            Highlight("p=0.5 song jobs", people["u1"], task=song),
+            Highlight("new person month-1 jobs", people["u7"], month1=True),
+        ],
         start=start,
-        aliases=dict(data.get("aliases") or {}),
-        source=path.name,
+        aliases={"p2": "u0", "p05": "u1", "new": "u7", "song": "yc_song"},
+        source="tiny roster",
     )
 
 
@@ -581,8 +495,8 @@ def world_from_database() -> CompareWorld:
     )
 
 
-def build_compare_world(start: date | None = None, path: str | Path | None = None) -> CompareWorld:
-    return load_compare_world(path, start_override=start)
+def build_compare_world(start: date | None = None) -> CompareWorld:
+    return load_compare_world(start)
 
 
 def format_report(scores: dict, world: CompareWorld) -> str:
@@ -606,7 +520,6 @@ def run_comparison(
     objectives=None,
     months: int = MONTHS,
     world: CompareWorld | None = None,
-    world_path: str | Path | None = None,
     on_progress=None,
 ):
     """Generate `months` for each objective, score, print-ready text.
@@ -619,7 +532,7 @@ def run_comparison(
     """
     random.seed(0)
     names = resolve_objectives(objectives)
-    world = world or load_compare_world(world_path)
+    world = world or load_compare_world()
     scores = {}
     for name in names:
         objective = get_objective(name)

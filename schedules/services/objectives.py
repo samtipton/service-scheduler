@@ -2,10 +2,41 @@
 
 import math
 import random
+import re
+from collections import defaultdict
 
 from pulp import LpMaximize, LpMinimize, LpVariable, lpSum
 
 from schedules.services.fairness import build_fairness_window
+
+
+def adjacent_rotation_week_pairs(date_tasks):
+    """Adjacent Sunday-start weeks that both have holes in the same family.
+
+    Tasks with a blank rotation_group are ignored. Two weeks pair when their
+    Sundays are 7 days apart. Each item is
+    (group, earlier_week_date_tasks, later_week_date_tasks).
+    """
+    by_group_week = defaultdict(lambda: defaultdict(dict))
+    for date_task in date_tasks:
+        group = (getattr(date_task.task, "rotation_group", None) or "").strip()
+        if not group:
+            continue
+        by_group_week[group][date_task.week_sunday][date_task] = date_task
+
+    pairs = []
+    for group, by_week in by_group_week.items():
+        weeks = sorted(by_week)
+        for earlier, later in zip(weeks, weeks[1:]):
+            if (later - earlier).days == 7:
+                pairs.append(
+                    (group, list(by_week[earlier].values()), list(by_week[later].values()))
+                )
+    return pairs
+
+
+def _lp_token(value) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", str(value)).strip("_") or "x"
 
 
 class CatchUpShareObjective:
@@ -83,6 +114,14 @@ class FairJobsObjective:
     same way. It only breaks ties: eight even song leaders, four slots, pick
     the four with fewer jobs overall.
 
+    Tasks that share Task.rotation_group are one family (song, prayer, Lord's
+    supper). Same-task consecutive week stays a hard rule. Across
+    different tasks in the family, two neighboring Sunday-start weeks may
+    still both go to the same person. That extra family job is a spill.
+    rotation_weight is the cost of one spill, in the same units as being one
+    job off fair share. CBC may still spill when fairness or filling a hole
+    costs more.
+
     People with no history are treated as already at their fair share for the
     past, so they start even. A hard cap stops anyone taking a whole year's
     owed jobs in one month.
@@ -91,6 +130,11 @@ class FairJobsObjective:
     name = "FairJobsObjective"
     sense = LpMinimize
     load_weight = 0.01  # keep per-task fairness first; total-load only breaks ties
+    rotation_weight = 2.0  # cost of one extra family job in adjacent weeks
+
+    def __init__(self, rotation_weight=None):
+        if rotation_weight is not None:
+            self.rotation_weight = rotation_weight
 
     def expression(self, x, ctx):
         window = build_fairness_window(ctx.schedule, ctx.services, ctx.users)
@@ -175,9 +219,50 @@ class FairJobsObjective:
         # miss (CBC sets the unused side to 0). Sum those misses. Missing
         # target is allowed; it costs 1 per job of gap. The 0.01 term is the
         # same idea for each person's total jobs, and only breaks ties.
-        return lpSum(over[k] + under[k] for k in pair_keys) + self.load_weight * lpSum(
+        # rotation_weight * spill is the adjacent-week family extra.
+        fairness = lpSum(over[k] + under[k] for k in pair_keys) + self.load_weight * lpSum(
             load_over[uid] + load_under[uid] for uid in user_ids
         )
+        return fairness + self._rotation_spill_terms(x, ctx)
+
+    def _rotation_spill_terms(self, x, ctx):
+        """Soft cap: at most one family job across two neighboring weeks.
+
+        For each person and each adjacent pair of Sunday-start weeks that both
+        have holes in the same rotation_group:
+
+            jobs in week A + jobs in week B  ≤  1 + spill
+
+        spill is 0 when they take at most one of those holes. Each extra job
+        is one spill. Previous-month holes in x (base_schedule) count, so a
+        locked Wednesday song leader penalizes the next Sunday.
+        """
+        pairs = adjacent_rotation_week_pairs({dt for dt, _ in x})
+        keys = []
+        terms = {}
+        for user in ctx.users:
+            for group, week_a, week_b in pairs:
+                xa = [dt for dt in week_a if (dt, user) in x]
+                xb = [dt for dt in week_b if (dt, user) in x]
+                if not xa or not xb:
+                    continue
+                key = (
+                    user.pk,
+                    _lp_token(group),
+                    week_a[0].week_sunday.strftime("%Y%m%d"),
+                )
+                keys.append(key)
+                terms[key] = (user, xa, xb)
+        if not keys:
+            return 0
+        spill = LpVariable.dicts("rot_spill", keys, lowBound=0)
+        for key, (user, xa, xb) in terms.items():
+            ctx.prob += (
+                lpSum(x[(dt, user)] for dt in xa)
+                + lpSum(x[(dt, user)] for dt in xb)
+                <= 1 + spill[key]
+            )
+        return self.rotation_weight * lpSum(spill[k] for k in keys)
 
 
 OBJECTIVES = {

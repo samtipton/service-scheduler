@@ -350,6 +350,16 @@ class Task(models.Model):
 
     objects = TaskManager()
     order = models.IntegerField(default=0, help_text="Used for ordering tasks")
+    rotation_group = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        help_text=(
+            "Tasks that share this label are one family for adjacent-week "
+            "rotation (e.g. Sunday and Wednesday song leader). Blank means "
+            "no family."
+        ),
+    )
 
     class Meta:
         ordering = ["order", "id"]

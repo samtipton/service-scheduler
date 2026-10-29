@@ -1,17 +1,29 @@
+import importlib
 from collections import Counter, defaultdict
 from datetime import date, datetime, time, timedelta
 
+from django.apps import apps
 from django.test import TestCase
 from django.utils import timezone
 from pulp import LpMaximize, lpSum
 
 from schedules.models import Assignment, Schedule, Service, Task, TaskPreference
+from schedules.services.datetask import DateTask
 from schedules.services.fairness import build_fairness_window
-from schedules.services.objectives import CatchUpShareObjective, FairJobsObjective
+from schedules.services.objectives import (
+    CatchUpShareObjective,
+    FairJobsObjective,
+    adjacent_rotation_week_pairs,
+)
 from schedules.services.scheduler import DEFAULT_CONSTRAINT_NAMES, Scheduler
 from users.models import User
 
 JOINED = timezone.make_aware(datetime(2020, 1, 1))
+_rotation_migration = importlib.import_module(
+    "schedules.migrations.0005_task_rotation_group"
+)
+ROTATION_FAMILIES = _rotation_migration.ROTATION_FAMILIES
+set_rotation_groups = _rotation_migration.set_rotation_groups
 
 
 TEST_EMAIL = "test+{slug}@example.com"
@@ -427,3 +439,160 @@ class FairJobsTests(SchedulerFixtureMixin, TestCase):
         raw_behind = 0 - window.target[(bob.pk, self.task.id)]
         self.assertGreater(key, raw_behind)
         self.assertLess(abs(key), abs(raw_behind) / 2)
+
+
+class RotationGroupTests(SchedulerFixtureMixin, TestCase):
+    """Song-leader family: same rotation_group, adjacent Sunday-start weeks."""
+
+    def _family(self, group="song"):
+        self.creator = self._user("creator", "Test", "Creator")
+        self.sun = Service.objects.create(
+            name="Sunday", day_of_week=0, start_time=time(9, 0)
+        )
+        self.wed = Service.objects.create(
+            name="Wednesday", day_of_week=3, start_time=time(19, 0)
+        )
+        self.sun_task = Task.objects.create(
+            id="rg_sun_song",
+            name="Sun Song",
+            service=self.sun,
+            order=1,
+            rotation_group=group,
+        )
+        self.wed_task = Task.objects.create(
+            id="rg_wed_song",
+            name="Wed Song",
+            service=self.wed,
+            order=2,
+            rotation_group=group,
+        )
+        self.sun_task.excludes.add(self.wed_task)
+        return self.sun_task, self.wed_task
+
+    def _people_on_family(self, n=3):
+        people = [
+            self._user(f"rg{i}", f"User{i}", "Rot", joined=JOINED) for i in range(n)
+        ]
+        for user in people:
+            self._pref(user, self.sun_task)
+            self._pref(user, self.wed_task)
+        return people
+
+    def _services(self):
+        return list(Service.objects.prefetch_related("tasks", "tasks__excludes"))
+
+    def _adjacent_hits(self, assignments):
+        by_user = defaultdict(list)
+        for date_task_str, name in assignments.items():
+            by_user[name].append(DateTask.from_str(date_task_str))
+        return sum(
+            len(adjacent_rotation_week_pairs(dts)) for dts in by_user.values()
+        )
+
+    def test_pairs_wednesday_with_next_sunday(self):
+        self._family()
+        schedule = self._schedule(2025, 4)
+        scheduler = Scheduler(schedule, self._services())
+        pairs = adjacent_rotation_week_pairs(scheduler.date_tasks)
+        self.assertEqual(len(pairs), 4)
+        first_group, week_a, week_b = pairs[0]
+        self.assertEqual(first_group, "song")
+        self.assertEqual({dt.date for dt in week_a}, {"2025-4-2"})
+        self.assertEqual({dt.date for dt in week_b}, {"2025-4-6", "2025-4-9"})
+
+    def test_pairs_month_boundary_wednesday_to_next_sunday(self):
+        self._family()
+        jan28 = DateTask("2026-1-28", self.wed_task)
+        feb1 = DateTask("2026-2-1", self.sun_task)
+        pairs = adjacent_rotation_week_pairs([jan28, feb1])
+        self.assertEqual(len(pairs), 1)
+        group, week_a, week_b = pairs[0]
+        self.assertEqual(group, "song")
+        self.assertEqual({dt.date for dt in week_a}, {"2026-1-28"})
+        self.assertEqual({dt.date for dt in week_b}, {"2026-2-1"})
+
+    def test_blank_group_is_not_paired(self):
+        self._family(group="")
+        schedule = self._schedule(2025, 4)
+        scheduler = Scheduler(schedule, self._services())
+        self.assertEqual(adjacent_rotation_week_pairs(scheduler.date_tasks), [])
+
+    def test_different_groups_are_not_paired_together(self):
+        self._family()
+        self.wed_task.rotation_group = "other"
+        self.wed_task.save()
+        schedule = self._schedule(2025, 4)
+        scheduler = Scheduler(schedule, self._services())
+        for group, week_a, week_b in adjacent_rotation_week_pairs(scheduler.date_tasks):
+            ids = {dt.task_id for dt in week_a + week_b}
+            self.assertFalse(
+                {"rg_sun_song", "rg_wed_song"} <= ids,
+                f"mixed family pair in {group}: {ids}",
+            )
+
+    def test_prefer_user_takes_adjacent_family_weeks(self):
+        """Without the FairJobs penalty, packing Alice to 4 jobs needs a spill."""
+        self._family()
+        alice, *_ = self._people_on_family(3)
+        schedule = self._schedule(2025, 4)
+        result, assignments = Scheduler(
+            schedule, self._services(), objective=PreferUserObjective(alice)
+        ).solve()
+        self.assertNotEqual(result, -1)
+        alice_jobs = sum(
+            1 for name in assignments.values() if name == alice.inverted_name()
+        )
+        self.assertGreaterEqual(alice_jobs, 4)
+        self.assertGreater(self._adjacent_hits(assignments), 0)
+
+    def test_fairjobs_high_weight_avoids_adjacent_family_weeks(self):
+        self._family()
+        self._people_on_family(4)
+        schedule = self._schedule(2025, 4)
+        result, assignments = Scheduler(
+            schedule,
+            self._services(),
+            objective=FairJobsObjective(rotation_weight=50),
+        ).solve()
+        self.assertNotEqual(result, -1)
+        self.assertEqual(len(assignments), 9)
+        self.assertEqual(self._adjacent_hits(assignments), 0)
+
+    def test_month_boundary_locked_wednesday_blocks_next_sunday(self):
+        self._family()
+        alice, *_ = self._people_on_family(4)
+        jan = self._schedule(2026, 1)
+        Assignment.objects.create(
+            schedule=jan,
+            task=self.wed_task,
+            user=alice,
+            assigned_at=timezone.make_aware(datetime(2026, 1, 28)),
+        )
+        feb = self._schedule(2026, 2, base=jan)
+        result, assignments = Scheduler(
+            feb,
+            self._services(),
+            objective=FairJobsObjective(rotation_weight=50),
+        ).solve()
+        self.assertNotEqual(result, -1)
+        alice_name = alice.inverted_name()
+        self.assertNotEqual(assignments.get("2026-2-1-rg_sun_song"), alice_name)
+        self.assertNotEqual(assignments.get("2026-2-4-rg_wed_song"), alice_name)
+        self.assertEqual(self._adjacent_hits(assignments), 0)
+
+    def test_known_ids_get_family_labels(self):
+        self.creator = self._user("creator", "Test", "Creator")
+        service = Service.objects.create(
+            name="Sunday", day_of_week=0, start_time=time(9, 0)
+        )
+        for ids in ROTATION_FAMILIES.values():
+            for task_id in ids:
+                Task.objects.create(
+                    id=task_id, name=task_id, service=service, order=1
+                )
+        set_rotation_groups(apps, None)
+        for group, ids in ROTATION_FAMILIES.items():
+            for task_id in ids:
+                self.assertEqual(
+                    Task.objects.get(pk=task_id).rotation_group, group, task_id
+                )
