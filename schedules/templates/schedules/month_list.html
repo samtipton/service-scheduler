@@ -11,15 +11,20 @@
 
 {% block content %}
 
-<button onclick="document.getElementById('newScheduleDialog').showModal()">Create New Schedule</button>
+<button type="button" class="create-schedule" onclick="document.getElementById('newScheduleDialog').showModal()">Create New Schedule</button>
 
 {% if schedules %}
     <ul>
     {% for schedule in schedules %}
         <li>
             <span class="schedule-row">
-                <a href="{% url 'schedules:month_view' id=schedule.id %}">{{ schedule.name }}</a>
+                <a class="schedule-name-link" href="{% url 'schedules:month_view' id=schedule.id %}">{{ schedule.name }}</a>
                 {% if schedule|can_be_deleted_by:user %}
+                <form method="post" action="{% url 'schedules:rename_schedule' id=schedule.id %}" class="rename-schedule" hidden>
+                    {% csrf_token %}
+                    <input class="schedule-name-input" type="text" name="name" value="{{ schedule.name }}" required aria-label="Schedule name" size="20">
+                </form>
+                <button type="button" class="rename-schedule-link">[rename]</button>
                 <form method="post" action="{% url 'schedules:delete_schedule' id=schedule.id %}" class="delete-schedule">
                     {% csrf_token %}
                     <button type="submit" class="delete-schedule-link" onclick="return confirm('Delete {{ schedule.name|escapejs }}? Its assignments will be removed. Later schedules that used it as a base keep their own assignments.');">[delete]</button>
@@ -64,4 +69,34 @@
       </div>
     </form>
   </dialog>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.querySelectorAll(".schedule-row").forEach(function (row) {
+        var link = row.querySelector(".schedule-name-link");
+        var form = row.querySelector(".rename-schedule");
+        var toggle = row.querySelector(".rename-schedule-link");
+        if (!link || !form || !toggle) {
+            return;
+        }
+        var input = form.querySelector('input[name="name"]');
+        toggle.addEventListener("click", function () {
+            link.hidden = true;
+            toggle.hidden = true;
+            form.hidden = false;
+            input.focus();
+            input.select();
+        });
+        input.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                input.value = link.textContent.trim();
+                form.hidden = true;
+                link.hidden = false;
+                toggle.hidden = false;
+            }
+        });
+    });
+</script>
 {% endblock %}

@@ -372,6 +372,19 @@ def delete_schedule(request, id):
     return HttpResponseRedirect("/schedules/", status=303)
 
 
+def rename_schedule(request, id):
+    schedule = get_object_or_404(Schedule, id=id)
+    if request.method != "POST":
+        return HttpResponseRedirect("/schedules/")
+    if not schedule.can_be_deleted_by(request.user):
+        return HttpResponseForbidden("You cannot rename this schedule.")
+    name = (request.POST.get("name") or "").strip()
+    if name:
+        schedule.name = name
+        schedule.save(update_fields=["name"])
+    return HttpResponseRedirect("/schedules/", status=303)
+
+
 def create_schedule(request):
     if request.method == "POST":
         name = request.POST.get("name")

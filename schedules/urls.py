@@ -9,6 +9,7 @@ urlpatterns = [
     path("<int:id>/", views.MonthView.as_view(), name="month_view"),
     path("create/", views.create_schedule, name="create_schedule"),
     path("<int:id>/delete", views.delete_schedule, name="delete_schedule"),
+    path("<int:id>/rename", views.rename_schedule, name="rename_schedule"),
     path(
         "<int:id>/generate",
         views.generate_schedule_assignments,

@@ -857,6 +857,83 @@ class DeleteScheduleViewTests(TestCase):
         self.assertTrue(Task.objects.filter(id=task.id).exists())
 
 
+class RenameScheduleViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="test+renamer@example.com",
+            first_name="Test",
+            last_name="Renamer",
+            password="x",
+        )
+        self.schedule = Schedule.objects.create(
+            name="Throwaway",
+            date=datetime.date(2025, 5, 1),
+            user=self.user,
+        )
+        self.client.force_login(self.user)
+
+    def test_post_renames_and_redirects(self):
+        response = self.client.post(
+            f"/schedules/{self.schedule.id}/rename", {"name": "May 2025"}
+        )
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response["Location"], "/schedules/")
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.schedule.name, "May 2025")
+
+    def test_get_does_not_rename(self):
+        response = self.client.get(f"/schedules/{self.schedule.id}/rename")
+        self.assertEqual(response.status_code, 302)
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.schedule.name, "Throwaway")
+
+    def test_blank_name_keeps_current(self):
+        response = self.client.post(
+            f"/schedules/{self.schedule.id}/rename", {"name": "   "}
+        )
+        self.assertEqual(response.status_code, 303)
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.schedule.name, "Throwaway")
+
+    def test_other_user_cannot_rename(self):
+        other = User.objects.create_user(
+            email="test+rename-other@example.com",
+            first_name="Other",
+            last_name="User",
+            password="x",
+        )
+        self.client.force_login(other)
+        response = self.client.post(
+            f"/schedules/{self.schedule.id}/rename", {"name": "Nope"}
+        )
+        self.assertEqual(response.status_code, 403)
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.schedule.name, "Throwaway")
+        list_page = self.client.get("/schedules/")
+        self.assertNotContains(list_page, "[rename]")
+
+    def test_staff_can_rename_someone_elses_schedule(self):
+        staff = User.objects.create_user(
+            email="test+rename-staff@example.com",
+            first_name="Staff",
+            last_name="User",
+            password="x",
+            is_staff=True,
+        )
+        self.client.force_login(staff)
+        response = self.client.post(
+            f"/schedules/{self.schedule.id}/rename", {"name": "Staff Name"}
+        )
+        self.assertEqual(response.status_code, 303)
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.schedule.name, "Staff Name")
+
+    def test_list_shows_rename_for_owner(self):
+        list_page = self.client.get("/schedules/")
+        self.assertContains(list_page, "[rename]")
+        self.assertContains(list_page, f"/schedules/{self.schedule.id}/rename")
+
+
 class SiteNavTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
