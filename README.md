@@ -142,4 +142,4 @@ erDiagram
 
 `Task.time_period` duplicates `Service.day_of_week`. `core` is seed-only.
 
-Planned: charts, multi-church isolation, publish email, reminders, load — `docs/features/`.
+Planned: charts, multi-church isolation, publish email, reminders, TaskCycle, drop `base_schedule` / `is_official` — `docs/features/`.

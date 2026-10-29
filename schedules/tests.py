@@ -857,6 +857,40 @@ class DeleteScheduleViewTests(TestCase):
         self.assertTrue(Task.objects.filter(id=task.id).exists())
 
 
+class SiteNavTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="test+nav@example.com",
+            first_name="Nav",
+            last_name="User",
+            password="x",
+        )
+        self.client.force_login(self.user)
+
+    def test_user_menu_has_logout_not_admin(self):
+        response = self.client.get("/schedules/")
+        self.assertContains(response, "Nav User")
+        self.assertContains(response, 'action="/logout/"')
+        self.assertContains(response, "Logout")
+        self.assertNotContains(response, "Admin")
+        self.assertNotContains(response, 'href="/admin/"')
+
+    def test_superuser_sees_admin_link(self):
+        self.user.is_superuser = True
+        self.user.is_staff = True
+        self.user.save()
+        response = self.client.get("/schedules/")
+        self.assertContains(response, "Admin")
+        self.assertContains(response, 'href="/admin/"')
+
+    def test_staff_without_superuser_does_not_see_admin(self):
+        self.user.is_staff = True
+        self.user.save()
+        response = self.client.get("/schedules/")
+        self.assertNotContains(response, "Admin")
+        self.assertNotContains(response, 'href="/admin/"')
+
+
 class UpdateScheduleTests(TestCase):
     def setUp(self):
         self.jay = User.objects.create_user(

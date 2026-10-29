@@ -4,7 +4,7 @@ Django app that assigns congregation men to recurring worship tasks with integer
 
 **Stack:** Django 5.1 · PostgreSQL · PuLP/CBC · vanilla JS · pdfkit
 
-Volunteers are login `User`s. Single congregation. Charts, multi-church isolation, publish-email, reminders, and load (who gets leftover jobs) are planned: `docs/features/`.
+Volunteers are login `User`s. Single congregation. Charts, multi-church isolation, publish-email, reminders, TaskCycle, and dropping `base_schedule` / `is_official` are planned: `docs/features/`.
 
 ## Domain
 
@@ -50,6 +50,8 @@ Same hard rules for both objectives. Binary `x[(date_task, user)]` for each elig
 CBC typically a few seconds. Persist is `"YYYY-M-D-task_id" → "Last, First"`.
 
 ## Frontend
+
+Site shell (`templates/base.html`): top bar with the page title and a user menu (name card → Logout; Admin to `/admin/` for superusers). The month grid is its own document and does not use this shell yet.
 
 Month grid: Django templates + `schedules/static/schedules/schedule.js`. One table; each hole is `<input class="assignment-input" list="{{ task.id }}">`. Datalist of eligible users by inverted name (`Last, First`), sorted by FairJobs `count_so_far − target` (Catch-up share uses `assignment_delta`). Enter autocompletes the first match. Unknown typed names are skipped on save.
 
