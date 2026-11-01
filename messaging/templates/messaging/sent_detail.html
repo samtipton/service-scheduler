@@ -1,0 +1,10 @@
+{% extends "messaging/email_shell.html" %}
+{% load tz %}
+
+{% block email_content %}
+<h2>{{ sent.subject }}</h2>
+<p>{{ sent.sent_at|timezone:"America/Chicago" }} · {{ sent.sent_by.first_name }} {{ sent.sent_by.last_name }}</p>
+<p>Recipients {{ sent.recipients|linebreaksbr }}</p>
+<p>Schedule: {{ sent.schedule.name }}</p>
+<pre class="sent-body">{{ sent.body }}</pre>
+{% endblock %}

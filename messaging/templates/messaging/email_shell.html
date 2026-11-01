@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Messages{% endblock %}
+{% block page_title %}Messages{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'messaging/messaging.css' %}">
+{% endblock %}
+
+{% block content %}
+<nav class="channel-tabs" aria-label="Channels">
+    <a class="is-active" href="{% url 'messaging:new_email' %}">Email</a>
+</nav>
+<div class="email-layout">
+    <nav class="email-nav" aria-label="Email">
+        <a href="{% url 'messaging:new_email' %}" {% if section == "new" %}class="is-active"{% endif %}>New email</a>
+        <a href="{% url 'messaging:template_list' %}" {% if section == "templates" %}class="is-active"{% endif %}>Templates</a>
+        <a href="{% url 'messaging:sent_list' %}" {% if section == "sent" %}class="is-active"{% endif %}>Sent</a>
+        <a href="{% url 'messaging:reminders' %}" {% if section == "reminders" %}class="is-active"{% endif %}>Reminders</a>
+    </nav>
+    <div class="email-main">
+        {% block email_content %}{% endblock %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'messaging/compose.js' %}"></script>
+{% endblock %}

@@ -25,6 +25,7 @@ from django.contrib.auth import views as auth_views
 urlpatterns = [
     path("", RedirectView.as_view(pattern_name="schedules:index", permanent=False)),
     path("schedules/", include("schedules.urls")),
+    path("messages/", include("messaging.urls")),
     path("admin/", admin.site.urls),
     # Authentication URLs
     path("login/", auth_views.LoginView.as_view(), name="login"),

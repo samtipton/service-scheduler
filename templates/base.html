@@ -17,8 +17,13 @@
         }
         .site-toolbar {
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            gap: 1rem;
+        }
+        .site-nav {
+            display: flex;
+            gap: 1rem;
+            margin-left: auto;
         }
         .page-title {
             font-size: 1.5rem;
@@ -99,6 +104,10 @@
         <div class="site-toolbar">
             <h1 class="page-title">{% block page_title %}Service Scheduler{% endblock %}</h1>
             {% if user.is_authenticated %}
+            <nav class="site-nav">
+                <a href="{% url 'schedules:index' %}">Schedules</a>
+                <a href="{% url 'messaging:new_email' %}">Messages</a>
+            </nav>
             <details class="user-menu">
                 <summary class="user-menu-card">{{ user.first_name }} {{ user.last_name }}</summary>
                 <div class="user-menu-panel">

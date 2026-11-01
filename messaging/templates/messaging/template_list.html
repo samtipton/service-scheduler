@@ -1,0 +1,15 @@
+{% extends "messaging/email_shell.html" %}
+
+{% block email_content %}
+<h2>Templates</h2>
+<p><a href="{% url 'messaging:template_create' %}">New template</a></p>
+{% if templates %}
+<ul class="record-list">
+    {% for template in templates %}
+    <li><a href="{% url 'messaging:template_edit' template.pk %}">{{ template.name }}</a> <span>{{ template.subject }}</span></li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>No templates yet.</p>
+{% endif %}
+{% endblock %}

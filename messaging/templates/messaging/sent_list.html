@@ -1,0 +1,19 @@
+{% extends "messaging/email_shell.html" %}
+{% load tz %}
+
+{% block email_content %}
+<h2>Sent</h2>
+{% if sent_emails %}
+<ul class="record-list">
+    {% for sent in sent_emails %}
+    <li>
+        <a href="{% url 'messaging:sent_detail' sent.pk %}">{{ sent.subject }}</a>
+        <span>{{ sent.sent_at|timezone:"America/Chicago" }}</span>
+        <span>{{ sent.recipients|linebreaksbr }}</span>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>No messages sent.</p>
+{% endif %}
+{% endblock %}

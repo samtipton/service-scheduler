@@ -142,4 +142,9 @@ erDiagram
 
 `Task.time_period` duplicates `Service.day_of_week`. `core` is seed-only.
 
-Planned: charts, multi-church isolation, publish email, reminders, TaskCycle, drop `base_schedule` / `is_official` — `docs/features/`.
+Messaging (`messaging` app, routes under `/messages/`):
+
+- **EmailTemplate** — reusable plain-text message. `name` unique. `subject` one line, max 200. `body` text. `created_by` → User, `PROTECT`. `created_at`, `updated_at`.
+- **SentEmail** — one successful send. `schedule` → Schedule, `PROTECT`. `template` → EmailTemplate, null if the template is deleted. `subject` and `body` are the rendered text as sent. `sent_at`, `sent_by` → User, `PROTECT`. `recipients` is a text snapshot of the addresses on that request. New tables, no backfill.
+
+Planned: charts, multi-church isolation, reminders, TaskCycle, drop `base_schedule` / `is_official` — `docs/features/`.

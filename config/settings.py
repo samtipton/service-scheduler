@@ -43,6 +43,7 @@ TESTING = "test" in sys.argv
 INSTALLED_APPS = [
     "users.apps.UsersConfig",
     "schedules.apps.SchedulesConfig",
+    "messaging.apps.MessagingConfig",
     "core.apps.CoreConfig",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -102,6 +103,8 @@ LOGOUT_REDIRECT_URL = "/login/"
 WSGI_APPLICATION = "config.wsgi.application"
 
 AUTH_USER_MODEL = "users.User"
+
+BREVO_API_KEY = config("BREVO_API_KEY", default="")
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases

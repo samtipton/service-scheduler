@@ -1,6 +1,5 @@
 from collections import defaultdict
 import json
-import pdfkit
 from datetime import datetime
 from django.http import (
     HttpResponse,
@@ -12,7 +11,6 @@ from django.utils import timezone
 from django.views import generic
 from django.shortcuts import get_object_or_404, render
 from django.contrib.auth import get_user_model
-from config.settings import BASE_DIR
 from schedules.models import Assignment, AssignmentStats, Schedule, Service, Task
 from schedules.services.fairness import build_fairness_window
 from schedules.services.objectives import (
@@ -20,13 +18,13 @@ from schedules.services.objectives import (
     FairJobsObjective,
     get_objective,
 )
+from schedules.services.pdf import pdf_filename, render_schedule_pdf
 from schedules.services.scheduler import Scheduler
 from schedules.utils import (
     get_month_calendar,
     get_service_weeks,
 )
 from django.views.decorators.csrf import csrf_exempt
-import os
 
 
 class MonthView(generic.View):
@@ -250,93 +248,22 @@ def update_schedule(request, id):
 def pdf(request, id):
     if request.method == "GET":
         schedule = Schedule.objects.get(id=id)
+        pdf_bytes = render_schedule_pdf(schedule)
+        filename = pdf_filename(schedule)
 
-        year = schedule.date.year
-        month = schedule.date.month
-        month_calendar, month_name = get_month_calendar(year, month)
-
-        # TODO consider moving these queries to ScheduleManager
-        # Prefetch related objects to minimize queries
-        # TODO ask about how reusable bits of view context are encapsulated in django
-
-        # TODO check if we can prefetch tasks here
-        services = Service.objects.all()
-
-        assignments = schedule.assignments.select_related(
-            "task", "user", "task__service"
-        )
-
-        service_days = {service.day_of_week for service in services}
-        service_weeks = get_service_weeks(month_calendar, service_days)
-
-        # Create a map of service_name to assignments for tasks in that service
-        service_assignments = defaultdict(dict)
-        for assignment in assignments:
-            assignment_key = (
-                f"{year}-{month}-{assignment.assigned_at.day}-{assignment.task.id}"
-            )
-            service_assignments[assignment.task.service.name][
-                assignment_key
-            ] = assignment.user
-
-        # Read the CSS file
-        app_static_dir = os.path.join(BASE_DIR, "schedules", "static", "schedules")
-        css_path = os.path.join(app_static_dir, "schedule.css")
-
-        if os.path.exists(css_path):
-            with open(css_path, "r") as f:
-                css_content = f.read()
-        else:
-            # Fallback to empty CSS if file not found
-            css_content = ""
-
-        context = {
-            "year": year,
-            "month": month,
-            "month_name": month_name,
-            "services": services,
-            "service_days": service_days,
-            "service_weeks": service_weeks,
-            "service_assignments": service_assignments,
-            "css_content": css_content,
-            "col_span": len(service_weeks) + len(service_weeks) + 1,
-        }
-        html_content = render(
-            request, "schedules/pdf_month_schedule.html", context
-        ).content.decode("utf-8")
-        options = {
-            "page-size": "Legal",
-            "orientation": "Landscape",
-            "encoding": "UTF-8",
-            "no-outline": None,
-            "quiet": "",
-            "disable-external-links": "",
-            "disable-internal-links": "",
-            "enable-local-file-access": "",
-        }
-        pdf = pdfkit.from_string(html_content, False, options=options)
-
-        # return pdf as attachment, content-dipsosition attachment filename
-        response = HttpResponse(pdf, content_type="application/pdf")
-        response["Content-Disposition"] = (
-            f'attachment; filename="schedule-{month}-{year}.pdf"'
-        )
-        response["Content-Length"] = len(pdf)
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["Content-Length"] = len(pdf_bytes)
         response["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response["Pragma"] = "no-cache"
         response["Expires"] = "0"
-
-        # Add X-Content-Type-Options to prevent MIME type sniffing
         response["X-Content-Type-Options"] = "nosniff"
 
-        # If this is an AJAX request, we need to handle it differently
-        # Currently not requeseting with ajax,
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            # For AJAX requests, we'll return a JSON response with the PDF data
             return JsonResponse(
                 {
-                    "pdf_data": pdf.decode("latin1"),
-                    "filename": f"schedule-{month}-{year}.pdf",
+                    "pdf_data": pdf_bytes.decode("latin1"),
+                    "filename": filename,
                 }
             )
 

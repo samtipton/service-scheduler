@@ -4,7 +4,7 @@ Django app that assigns congregation men to recurring worship tasks with integer
 
 **Stack:** Django 5.1 · PostgreSQL · PuLP/CBC · vanilla JS · pdfkit
 
-Volunteers are login `User`s. Single congregation. Charts, multi-church isolation, publish-email, reminders, TaskCycle, and dropping `base_schedule` / `is_official` are planned: `docs/features/`.
+Volunteers are login `User`s. Single congregation. Publish email is shipped (`messaging`, `docs/features/email.md`). Charts, multi-church isolation, reminders, TaskCycle, and dropping `base_schedule` / `is_official` are planned: `docs/features/`. Groups wait (`docs/features/accounts.md`).
 
 ## Domain
 
@@ -29,7 +29,7 @@ CBC minimizes Σ |end_count − fair share| (plus a tiny total-load tie-break). 
 
 Tasks that share `Task.rotation_group` are one family (song, prayer, Lord’s supper). Same-task consecutive week is still a hard rule. Across different tasks in the family, an extra job in two neighboring Sunday-start weeks (7 days) is a spill; CBC pays `rotation_weight` (default 2, same units as one job off fair share) per spill. Blank group means no family. A wider window is a later change. Code: `schedules/services/objectives.py`, `fairness.py`.
 
-**Catch-up share** (`CatchUpShareObjective`) is frozen. Generate can still pick it. Maximize `(ideal · p − actual) · x` where `ideal = p/Σp`, so preference is applied twice. Fairness is lifetime share of that task (assignments before this month), not a 12-month window. New people with actual 0 look infinitely behind; jitter only if actual &lt; 5% of `ideal · p`.
+**Catch-up share** (`CatchUpShareObjective`) is frozen. Generate can still pick it. Maximize `(ideal · p − actual) · x` where `ideal = p/Σp`, so preference is applied twice. Fairness is lifetime share of that task (assignments before this month), not a 12-month window. New people with actual 0 look infinitely behind; jitter only if actual < 5% of `ideal · p`.
 
 ## Constraints
 
@@ -51,21 +51,23 @@ CBC typically a few seconds. Persist is `"YYYY-M-D-task_id" → "Last, First"`.
 
 ## Frontend
 
-Site shell (`templates/base.html`): top bar with the page title and a user menu (name card → Logout; Admin to `/admin/` for superusers). The month grid is its own document and does not use this shell yet.
+Site shell (`templates/base.html`): top bar with the page title, Schedules and Messages links when logged in, and a user menu (name card → Logout; Admin to `/admin/` for superusers). The month grid is its own document and does not use this shell. Its overlay has Send schedule, which posts to `/messages/`.
 
 Month grid: Django templates + `schedules/static/schedules/schedule.js`. One table; each hole is `<input class="assignment-input" list="{{ task.id }}">`. Datalist of eligible users by inverted name (`Last, First`), sorted by FairJobs `count_so_far − target` (Catch-up share uses `assignment_delta`). Enter autocompletes the first match. Unknown typed names are skipped on save.
 
-Also: drag-swap, 400ms debounce plus pagehide flush of dirty cells, Generate (skeleton on empty cells), Legal-landscape PDF, per-person count panel, clear. Overlay in `month_schedule.html`. Unauthenticated `/schedules/` goes to `/login/`. Generate, update, clear, and PDF are `csrf_exempt`; `LoginRequiredMiddleware` still wraps `/schedules/`.
+Also: drag-swap, 400ms debounce plus pagehide flush of dirty cells, Generate (skeleton on empty cells), Legal-landscape PDF, per-person count panel, clear. Overlay in `month_schedule.html`. Unauthenticated `/schedules/` and `/messages/` go to `/login/`. Generate, update, clear, and PDF are `csrf_exempt`. Message compose and send use the CSRF token. `LoginRequiredMiddleware` wraps both prefixes.
 
 ## Key files
 
+- `schedules/services/pdf.py` — `render_schedule_pdf` (download and mail)
 - `schedules/services/scheduler.py` — ILP
 - `schedules/services/objectives.py` — FairJobsObjective (default), CatchUpShareObjective (old)
 - `schedules/services/fairness.py` — 12-month job counts / targets for FairJobs
 - `schedules/models.py` — domain
 - `schedules/views.py` / `static/schedules/schedule.js` — month UI
 - `schedules/utils.py` and `schedules/templatetags/schedule_tags.py` — `get_service_day` (keep in sync)
-- `users/models.py` — email login
+- `users/models.py` — email login. No phone field yet.
+- `messaging/` — email templates, sent mail, Brevo. `messaging/services/safety.py` is the recipient gate.
 - `core/` — seed-only (`core/management/commands/` from `core/fixtures/`)
 
 ## Commands
@@ -78,10 +80,23 @@ python manage.py dump_compare_db
 python manage.py compare_objectives FairJobs --dump
 ```
 
+## Mail
+
+Do not re-decide these. Detail is in `docs/features/email.md`.
+
+- App package is `messaging`, routes `/messages/`. Not `core`, not `schedules`, and not a package named `messages` (`django.contrib.messages` owns that label).
+- Brevo transactional HTTP API. `BREVO_API_KEY` in `.env` (gitignored). From `olsenparkannouncements@gmail.com`, sender name Olsen Park. No Brevo contacts. No SMTP key. Key permissions: Transactional email = All, Transactional SMS = Read/write. Every other resource None.
+- Send mails every active user. To is `olsenparkannouncements@gmail.com`. The roster is BCC, split so an attached message stays at or under 99 recipients. When groups exist, that roster is the active members of the schedule's group. Send test email still mails one typed address and no one else.
+- `TIME_ZONE` stays `UTC`. Assignment datetimes are midnight UTC; changing `TIME_ZONE` moves those days. Sent mail displays in `America/Chicago`.
+- `EmailTemplate` and `SentEmail` are already migrated (`messaging.0001_email_template_and_sent_email`).
+- When groups exist, a schedule’s recipient query is the active members of that schedule’s group. Until then the preview roster is active users.
+
+Reminders are not built. `docs/features/reminders.md` is still a sketch. `User` has no phone number yet.
+
 ## Database
 
 Schema changes are **manual-approve only**. Do not run `makemigrations` or `migrate` unless the user has approved a written change. Propose the change first: fields, nullability, FKs, uniqueness, and what happens to existing rows — in the README Models section and the relevant `docs/features/*.md`. After approval, one named migration. No autogenerated pile-ups, no silent rollbacks.
 
 Test rows must be **identifiable and deletable**: test users/emails with a reserved prefix (e.g. `test+…@`). Year comparison runs in the Django test database only (`schedules.services.test_year_compare`). Generated months are deleted by PK; dumped history `Assignment` rows stay.
 
-See README.md Models, docs/features/.
+See README.md

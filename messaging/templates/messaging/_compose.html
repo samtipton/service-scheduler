@@ -1,0 +1,66 @@
+<form method="post" action="{% url 'messaging:send' %}" class="compose" data-compose-form data-preview-url="{% url 'messaging:preview' %}">
+    {% csrf_token %}
+    <p class="safety-note">Send goes to every active member below, in BCC. Send test email goes to the one address in Test recipient.</p>
+    {% if error %}
+    <p class="compose-error" role="alert">{{ error }}</p>
+    {% endif %}
+    <p class="compose-error" data-preview-error hidden></p>
+
+    {% if fixed_schedule %}
+    <input type="hidden" name="schedule" value="{{ fixed_schedule.id }}" data-compose-schedule>
+    <label class="compose-field">Schedule
+        <input type="text" value="{{ fixed_schedule.name }}" readonly>
+    </label>
+    {% else %}
+    <label class="compose-field">Schedule
+        <select name="schedule" data-compose-schedule required>
+            <option value="">Choose a schedule</option>
+            {% for schedule in schedules %}
+            <option value="{{ schedule.id }}" {% if selected_schedule == schedule.id|stringformat:"s" %}selected{% endif %}>{{ schedule.name }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    {% endif %}
+
+    <label class="compose-field">Template
+        <select name="template" data-compose-template required>
+            <option value="">Choose a template</option>
+            {% for template in templates %}
+            <option value="{{ template.id }}" {% if selected_template == template.id|stringformat:"s" %}selected{% endif %}>{{ template.name }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    {% if not templates %}
+    <p><a href="{% url 'messaging:template_create' %}">Create a template</a> before sending.</p>
+    {% endif %}
+
+    <label class="compose-field">Subject
+        <input type="text" data-preview-subject readonly>
+    </label>
+    <label class="compose-field">Body
+        <textarea data-preview-body rows="8" readonly></textarea>
+    </label>
+
+    <div class="roster">
+        <p>Roster</p>
+        <ul data-preview-recipients>
+            {% for user in roster %}
+            <li>{{ user.first_name }} {{ user.last_name }} &lt;{{ user.email }}&gt;</li>
+            {% empty %}
+            <li>No active members.</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <label class="compose-field">Test recipient
+        <input type="email" name="test_email" data-test-email value="{{ test_email|default:'' }}" placeholder="name@example.com" autocomplete="off">
+    </label>
+
+    <div class="compose-actions">
+        <button type="submit">Send</button>
+        <button type="submit" data-send-test formaction="{% url 'messaging:send_test' %}">Send test email</button>
+        {% if fixed_schedule %}
+        <button type="button" data-compose-cancel>Cancel</button>
+        {% endif %}
+    </div>
+</form>

@@ -24,7 +24,9 @@ This template expects the following context variables:
     </script>
     <title>{{ month_name }} {{ year }} Schedule</title>
     <link rel="stylesheet" href="{% static 'schedules/schedule.css' %}">
+    <link rel="stylesheet" href="{% static 'messaging/messaging.css' %}">
     <script src="{% static 'schedules/schedule.js' %}"></script>
+    <script src="{% static 'messaging/compose.js' %}"></script>
 </head>
 <body>
     <div class="overlay mouse-reveal">
@@ -36,6 +38,7 @@ This template expects the following context variables:
         </select>
         <button id="generate-assignments">Generate Assignments</button>
         <button id="download-pdf">Download PDF</button>
+        <button type="button" id="send-schedule" data-compose-url="{% url 'messaging:compose' %}?schedule={{ schedule.id }}">Send schedule</button>
         <button id="toggle-assignment-count">Toggle Assignment Counts</button>
         <button id="clear-schedule">Clear Assignments</button>
         {% if schedule|can_be_deleted_by:user %}
@@ -59,6 +62,7 @@ This template expects the following context variables:
     {% include "schedules/month_schedule_service.html" with service=services.3 %}
 </table>
 
+<dialog id="send-schedule-dialog"></dialog>
 <div class="toast" id="toast"></div>
 <div class="assignment-map hidden"></div>
 

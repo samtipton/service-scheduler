@@ -8,8 +8,10 @@ class LoginRequiredMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        # Check if the path starts with /schedules/
-        if request.path.startswith("/schedules/") and not request.user.is_authenticated:
+        protected = request.path.startswith("/schedules/") or request.path.startswith(
+            "/messages/"
+        )
+        if protected and not request.user.is_authenticated:
             # Exclude the login/logout URLs
             if not any(
                 request.path.startswith(p)
