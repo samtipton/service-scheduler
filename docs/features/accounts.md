@@ -14,7 +14,7 @@ Service, Task, TaskPreference, Schedule, and Assignment each take a group. That 
 
 `Task.id` stays a globally unique code (`song_leader`, `lesson`). Several tasks already share a display name. A sandbox copy cannot reuse `song_leader`. Do not switch the primary key to an AutoField to make room for that.
 
-TaskRequires stays per user and task, with no group column. The solver keeps requires whose task is in the schedule's group.
+TaskRequires stays per user and task, with no group column. The solver keeps a row when that person is on the schedule's roster and both tasks are on the services in that solve.
 
 User-email queries follow the schedule’s group. The publish-email roster is the active members of that group, not every `User`. A production schedule does not pick up sandbox addresses, and a sandbox schedule does not pick up production addresses.
 

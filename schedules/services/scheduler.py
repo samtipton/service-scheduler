@@ -96,11 +96,13 @@ class Scheduler:
 
         self.tasks = self.get_tasks()
         self.task_exclusions = self.get_exclusions()
-        requires = TaskRequires.objects.filter(user__is_active=True).select_related(
-            "user", "task", "requires"
-        )
-        if self.schedule.group_id:
-            requires = requires.filter(task__group=self.schedule.group)
+        # A pair counts only when this solve can assign both sides.
+        task_ids = [task.id for task in self.tasks]
+        requires = TaskRequires.objects.filter(
+            user__in=self.users,
+            task_id__in=task_ids,
+            requires_id__in=task_ids,
+        ).select_related("user", "task", "requires")
         self.task_requires = list(requires)
         self.task_requires_pairs = defaultdict(set)
         for req in self.task_requires:

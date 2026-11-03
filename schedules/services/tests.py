@@ -23,7 +23,7 @@ from schedules.services.objectives import (
     adjacent_rotation_week_pairs,
 )
 from schedules.services.scheduler import DEFAULT_CONSTRAINT_NAMES, Scheduler
-from users.models import User
+from users.models import Group, Membership, User
 
 JOINED = timezone.make_aware(datetime(2020, 1, 1))
 _rotation_migration = importlib.import_module(
@@ -706,3 +706,62 @@ class TaskRequiresTests(SchedulerFixtureMixin, TestCase):
         self.assertNotEqual(result, -1)
         self.assertEqual(assignments.get("2025-4-6-rq_usher"), alice.inverted_name())
         self.assertEqual(assignments.get("2025-4-6-rq_security"), bob.inverted_name())
+
+    def test_requires_for_someone_outside_the_roster_is_left_out(self):
+        self._world()
+        group = Group.objects.get()
+        alice = self._user("alice", "Alice", "Test", joined=JOINED)
+        bob = self._user("bob", "Bob", "Test", joined=JOINED)
+        carol = self._user("carol", "Carol", "Test", joined=JOINED)
+        for user in (bob, carol, self.creator):
+            Membership.objects.create(
+                user=user, group=group, role=Membership.SCHEDULER
+            )
+            self._pref(user, self.security)
+            self._pref(user, self.usher)
+        TaskRequires.objects.create(
+            user=alice, task=self.security, requires=self.usher
+        )
+        TaskRequires.objects.create(
+            user=bob, task=self.security, requires=self.usher
+        )
+        schedule = self._schedule(2025, 4)
+        scheduler = Scheduler(schedule, self._services())
+        loaded = {req.user_id for req in scheduler.task_requires}
+        self.assertIn(bob.pk, loaded)
+        self.assertNotIn(alice.pk, loaded)
+
+    def test_requires_outside_this_service_list_is_left_out(self):
+        self._world()
+        wednesday = Service.objects.create(
+            name="Wednesday", day_of_week=3, start_time=time(19, 0)
+        )
+        door = Task.objects.create(
+            id="rq_door", name="Door", service=wednesday, order=1
+        )
+        alice = self._user("alice", "Alice", "Test", joined=JOINED)
+        bob = self._user("bob", "Bob", "Test", joined=JOINED)
+        carol = self._user("carol", "Carol", "Test", joined=JOINED)
+        self._pref(alice, self.security)
+        for user in (bob, carol):
+            self._pref(user, self.security)
+            self._pref(user, self.usher)
+        TaskRequires.objects.create(
+            user=alice, task=self.security, requires=door
+        )
+        schedule = self._schedule(2025, 4)
+        sunday_only = list(
+            Service.objects.filter(pk=self.sun.pk).prefetch_related(
+                "tasks", "tasks__excludes"
+            )
+        )
+        scheduler = Scheduler(
+            schedule, sunday_only, objective=PreferUserObjective(alice)
+        )
+        self.assertEqual(scheduler.task_requires, [])
+        result, assignments = scheduler.solve()
+        self.assertNotEqual(result, -1)
+        alice_weeks = self._week_pairs(assignments, alice.inverted_name())
+        self.assertTrue(
+            any("rq_security" in ids for ids in alice_weeks.values())
+        )
