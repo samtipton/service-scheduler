@@ -6,8 +6,10 @@
 
 ## Install
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
+
+The host image installs `requirements.txt` only (Django, Postgres, PuLP, pdfkit, python-decouple). `requirements-dev.txt` adds pytest, black, and django-debug-toolbar.
 
 ## Tests
 
@@ -73,10 +75,17 @@ _read scripts for now to understand data format for now_
 
 ## Models
 
-Volunteer is the login `User`. Single congregation; no `Church` table.
+Volunteer is the login `User`. A `Group` is one congregation. Membership role is `admin` or `scheduler`. The existing congregation is named Olsen Park. There is no `Person` model and no open signup.
 
 ```mermaid
 erDiagram
+    Group ||--o{ Membership : has
+    User ||--o{ Membership : joins
+    Group ||--o{ Service : owns
+    Group ||--o{ Task : owns
+    Group ||--o{ TaskPreference : scopes
+    Group ||--o{ Schedule : owns
+    Group ||--o{ Assignment : owns
     User ||--o{ Schedule : creates
     User ||--o{ Assignment : assigned
     User ||--o{ TaskPreference : prefers
@@ -99,13 +108,19 @@ erDiagram
         last_name string
         is_active bool
     }
+    Group {
+        name string
+    }
+    Membership {
+        role string "admin or scheduler"
+    }
     Service {
         name string
         day_of_week int "0=Sun, null=week"
         start_time time
     }
     Task {
-        id string PK
+        id string PK "globally unique code"
         name string
         time_period string "duplicates Service"
         order int
@@ -132,12 +147,14 @@ erDiagram
     }
 ```
 
-- **Service** — recurring event. `day_of_week` 0=Sunday; `null` = week-level.
-- **Task** — role on a service. Symmetric `excludes` (cannot hold both in the same week); each task also excludes itself on save. `rotation_group` is a shared label for adjacent-week FairJobs rotation. Blank means no family. Migrate `0005` sets `song` (first/Sunday/Wednesday song leader), `prayer` (first/Sunday/Wednesday opening and closing), `lords_supper` (table lead/aid bread and cup).
-- **TaskPreference** — `0` ineligible, `(0,1)` below baseline, `1` baseline, `>1` want more.
-- **TaskRequires** — when this person is assigned `task`, also assign `requires` the same week. Skips that pair’s exclusion for them only. Directional. They need `p > 0` on both.
-- **Schedule** — one month. Optional `base_schedule` (previous month, git-style parent). `is_official` is unused; history is Assignment rows.
-- **Assignment** — person + task + datetime on a schedule. Source of truth for history and fairness. No unique `(schedule, task, assigned_at)`.
+- **Group** — one congregation. Other rows store its numeric `id`. The existing congregation is named Olsen Park. There is no slug.
+- **Membership** — one user in one group, role `admin` or `scheduler`. A user can belong to more than one group. No membership, and not staff, means that group's grid and mail stay hidden. Staff and superuser can still open a grid.
+- **Service** — recurring event. `day_of_week` 0=Sunday; `null` = week-level. `group` is required.
+- **Task** — role on a service. Symmetric `excludes` (cannot hold both in the same week); each task also excludes itself on save. `rotation_group` is a shared label for adjacent-week FairJobs rotation. Blank means no family. Migrate `0005` sets `song` (first/Sunday/Wednesday song leader), `prayer` (first/Sunday/Wednesday opening and closing), `lords_supper` (table lead/aid bread and cup). `id` stays a globally unique code (`song_leader`, `lesson`). A second group's copy needs a different id.
+- **TaskPreference** — `0` ineligible, `(0,1)` below baseline, `1` baseline, `>1` want more. `group` follows the task.
+- **TaskRequires** — when this person is assigned `task`, also assign `requires` the same week. Skips that pair’s exclusion for them only. Directional. They need `p > 0` on both. Not group-scoped. The solver keeps requires whose task is in the schedule's group.
+- **Schedule** — one month. Optional `base_schedule` (previous month, git-style parent). `is_official` is unused; history is Assignment rows. `group` is required.
+- **Assignment** — person + task + datetime on a schedule. Source of truth for history and fairness. No unique `(schedule, task, assigned_at)`. `group` follows the schedule. `bulk_create` must set `group_id` because it does not call `save()`.
 - **AssignmentStats** — derived snapshot (`ideal_average`, `actual_average`, `assignment_delta`), M2M to schedules. Recomputable from Assignment + preference. Lifetime share. FairJobs does not read it.
 
 `Task.time_period` duplicates `Service.day_of_week`. `core` is seed-only.
@@ -147,4 +164,4 @@ Messaging (`messaging` app, routes under `/messages/`):
 - **EmailTemplate** — reusable plain-text message. `name` unique. `subject` one line, max 200. `body` text. `created_by` → User, `PROTECT`. `created_at`, `updated_at`.
 - **SentEmail** — one successful send. `schedule` → Schedule, `PROTECT`. `template` → EmailTemplate, null if the template is deleted. `subject` and `body` are the rendered text as sent. `sent_at`, `sent_by` → User, `PROTECT`. `recipients` is a text snapshot of the addresses on that request. New tables, no backfill.
 
-Planned: charts, multi-church isolation, reminders, TaskCycle, drop `base_schedule` / `is_official` — `docs/features/`.
+Planned: charts, reminders, TaskCycle, drop `base_schedule` / `is_official` — `docs/features/`. `schedules/fixtures/compare/live.sql` is a raw dump and does not include `group_id`. Regenerate it with `dump_compare_db` before `compare_objectives --dump`. The default test suite does not load that file.

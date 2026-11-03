@@ -16,7 +16,7 @@ from schedules.models import (
     TaskPreference,
     Assignment,
 )
-from users.models import User
+from users.models import Membership, User
 
 
 class ServiceTestCase(TestCase):
@@ -777,6 +777,9 @@ class DeleteScheduleViewTests(TestCase):
             date=datetime.date(2025, 5, 1),
             user=self.user,
         )
+        Membership.objects.create(
+            user=self.user, group=self.schedule.group, role=Membership.SCHEDULER
+        )
         self.client.force_login(self.user)
 
     def test_post_deletes_schedule_and_redirects(self):
@@ -799,7 +802,7 @@ class DeleteScheduleViewTests(TestCase):
         )
         self.client.force_login(other)
         response = self.client.post(f"/schedules/{self.schedule.id}/delete")
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
         self.assertTrue(Schedule.objects.filter(id=self.schedule.id).exists())
         list_page = self.client.get("/schedules/")
         self.assertNotContains(list_page, "[delete]")
@@ -870,6 +873,9 @@ class RenameScheduleViewTests(TestCase):
             date=datetime.date(2025, 5, 1),
             user=self.user,
         )
+        Membership.objects.create(
+            user=self.user, group=self.schedule.group, role=Membership.SCHEDULER
+        )
         self.client.force_login(self.user)
 
     def test_post_renames_and_redirects(self):
@@ -906,7 +912,7 @@ class RenameScheduleViewTests(TestCase):
         response = self.client.post(
             f"/schedules/{self.schedule.id}/rename", {"name": "Nope"}
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
         self.schedule.refresh_from_db()
         self.assertEqual(self.schedule.name, "Throwaway")
         list_page = self.client.get("/schedules/")
@@ -992,6 +998,9 @@ class UpdateScheduleTests(TestCase):
             name="Dec 2026",
             date=datetime.date(2026, 12, 1),
             user=self.jay,
+        )
+        Membership.objects.create(
+            user=self.jay, group=self.schedule.group, role=Membership.SCHEDULER
         )
         self.client.force_login(self.jay)
 

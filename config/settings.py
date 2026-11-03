@@ -15,6 +15,8 @@ from pathlib import Path
 import sys
 from decouple import config
 
+from config.env import as_bool, csv_list, database_from_url, is_database_url
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -26,7 +28,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# .env sets DEBUG=True on the laptop. The host sets DEBUG=false.
+DEBUG = config("DEBUG", default=False, cast=as_bool)
 
 
 def show_toolbar(request):
@@ -34,9 +37,19 @@ def show_toolbar(request):
     return request.GET.get("debug") == "true"
 
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = csv_list(config("ALLOWED_HOSTS", default="localhost,127.0.0.1"))
+CSRF_TRUSTED_ORIGINS = csv_list(config("CSRF_TRUSTED_ORIGINS", default=""))
 
-TESTING = "test" in sys.argv
+TESTING = "test" in sys.argv or "pytest" in sys.argv
+
+# HSTS stays at 0 until HTTPS on the host is confirmed. check --deploy then
+# reports security.W004, and that warning is the one left open on purpose.
+if not DEBUG and not TESTING:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_HSTS_SECONDS = config("SECURE_HSTS_SECONDS", default=0, cast=int)
 
 # Application definition
 
@@ -90,6 +103,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "users.context_processors.group_nav",
             ],
         },
     },
@@ -109,16 +123,24 @@ BREVO_API_KEY = config("BREVO_API_KEY", default="")
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "servicescheduler",
-        "USER": "postgres",
-        "PASSWORD": config("POSTGRES_PASSWORD"),
-        "HOST": "localhost",
-        "PORT": "5432",
+# A full postgres URL (Render sets this). A bare host such as "localhost" is not one.
+_database_url = config("DATABASE_URL", default="")
+if is_database_url(_database_url):
+    DATABASES = {"default": database_from_url(_database_url)}
+else:
+    _db_host = config("POSTGRES_HOST", default="localhost")
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": config("POSTGRES_DB", default="servicescheduler"),
+            "USER": config("POSTGRES_USER", default="postgres"),
+            "PASSWORD": config("POSTGRES_PASSWORD"),
+            "HOST": _db_host,
+            "PORT": config("POSTGRES_PORT", default="5432"),
+        }
     }
-}
+    if _db_host not in ("localhost", "127.0.0.1", ""):
+        DATABASES["default"]["OPTIONS"] = {"sslmode": "require"}
 
 
 # Password validation

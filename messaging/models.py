@@ -27,7 +27,7 @@ class EmailTemplate(models.Model):
 class SentEmail(models.Model):
     schedule = models.ForeignKey(
         "schedules.Schedule",
-        on_delete=models.PROTECT,
+        on_delete=models.CASCADE,
         related_name="sent_emails",
     )
     template = models.ForeignKey(

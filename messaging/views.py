@@ -13,18 +13,32 @@ from messaging.services.send import (
     send_schedule_email,
     send_test_email,
 )
+from schedules.guard import visible_schedule
 from schedules.models import Schedule
+from users.access import current_group, visible_groups
 
 
 def _page(section):
     return {"section": section}
 
 
-def _compose_context(fixed_schedule=None):
+def _visible_schedules(request):
+    group = current_group(request)
+    if group is None:
+        return Schedule.objects.none()
+    return Schedule.objects.filter(group=group).order_by("-date")
+
+
+def _compose_context(request, fixed_schedule=None):
+    if fixed_schedule is not None:
+        roster = active_roster(fixed_schedule.group)
+    else:
+        group = current_group(request)
+        roster = active_roster(group) if group is not None else []
     return {
-        "schedules": Schedule.objects.all(),
+        "schedules": _visible_schedules(request),
         "templates": EmailTemplate.objects.all(),
-        "roster": list(active_roster()),
+        "roster": list(roster),
         "fixed_schedule": fixed_schedule,
     }
 
@@ -33,16 +47,16 @@ def new_email(request):
     return render(
         request,
         "messaging/new_email.html",
-        {**_page("new"), **_compose_context()},
+        {**_page("new"), **_compose_context(request)},
     )
 
 
 def compose(request):
-    schedule = get_object_or_404(Schedule, pk=request.GET.get("schedule"))
+    schedule = visible_schedule(request, request.GET.get("schedule"))
     return render(
         request,
         "messaging/_compose.html",
-        _compose_context(fixed_schedule=schedule),
+        _compose_context(request, fixed_schedule=schedule),
     )
 
 
@@ -85,13 +99,20 @@ def sent_list(request):
     return render(
         request,
         "messaging/sent_list.html",
-        {**_page("sent"), "sent_emails": SentEmail.objects.select_related("schedule")},
+        {
+            **_page("sent"),
+            "sent_emails": SentEmail.objects.filter(
+                schedule__in=_visible_schedules(request)
+            ).select_related("schedule"),
+        },
     )
 
 
 def sent_detail(request, pk):
     sent = get_object_or_404(
-        SentEmail.objects.select_related("schedule", "sent_by", "template"), pk=pk
+        SentEmail.objects.select_related("schedule", "sent_by", "template"),
+        pk=pk,
+        schedule__group__in=visible_groups(request.user),
     )
     return render(
         request,
@@ -106,14 +127,16 @@ def reminders(request):
 
 @require_POST
 def preview(request):
-    schedule = get_object_or_404(Schedule, pk=request.POST.get("schedule"))
+    schedule = visible_schedule(request, request.POST.get("schedule"))
     template = get_object_or_404(EmailTemplate, pk=request.POST.get("template"))
     subject, body = rendered_message(schedule, template)
     return JsonResponse(
         {
             "subject": subject,
             "body": body,
-            "recipients": [roster_label(user) for user in active_roster()],
+            "recipients": [
+                roster_label(user) for user in active_roster(schedule.group)
+            ],
         }
     )
 
@@ -123,7 +146,7 @@ def _send_result(request, schedule, template, sent=None, message="", test_email=
     if message:
         if ajax:
             return JsonResponse({"error": message}, status=400)
-        context = {**_page("new"), **_compose_context(), "error": message}
+        context = {**_page("new"), **_compose_context(request), "error": message}
         context["selected_schedule"] = str(schedule.pk)
         context["selected_template"] = str(template.pk)
         context["test_email"] = test_email
@@ -136,7 +159,7 @@ def _send_result(request, schedule, template, sent=None, message="", test_email=
 
 @require_POST
 def send(request):
-    schedule = get_object_or_404(Schedule, pk=request.POST.get("schedule"))
+    schedule = visible_schedule(request, request.POST.get("schedule"))
     template = get_object_or_404(EmailTemplate, pk=request.POST.get("template"))
     try:
         sent = send_schedule_email(schedule, template, request.user)
@@ -147,7 +170,7 @@ def send(request):
 
 @require_POST
 def send_test(request):
-    schedule = get_object_or_404(Schedule, pk=request.POST.get("schedule"))
+    schedule = visible_schedule(request, request.POST.get("schedule"))
     template = get_object_or_404(EmailTemplate, pk=request.POST.get("template"))
     raw = request.POST.get("test_email", "")
     try:

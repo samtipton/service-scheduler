@@ -83,6 +83,65 @@
             background: #f3f4f6;
             text-decoration: none;
         }
+        .group-menu {
+            position: relative;
+        }
+        .group-menu-card,
+        .create-group-button {
+            list-style: none;
+            cursor: pointer;
+            user-select: none;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 0.5rem;
+            padding: 0.4rem 0.75rem;
+            font: inherit;
+        }
+        .group-menu-card::-webkit-details-marker {
+            display: none;
+        }
+        .group-menu-card::after {
+            content: "▾";
+            margin-left: 0.4rem;
+            font-size: 0.75rem;
+            opacity: 0.7;
+        }
+        .group-menu-panel {
+            position: absolute;
+            left: 0;
+            top: calc(100% + 0.25rem);
+            min-width: 12rem;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            padding: 0.25rem 0;
+            z-index: 20;
+        }
+        .group-menu-panel button {
+            display: block;
+            width: 100%;
+            box-sizing: border-box;
+            text-align: left;
+            padding: 0.5rem 0.75rem;
+            background: none;
+            border: none;
+            color: inherit;
+            font: inherit;
+            cursor: pointer;
+        }
+        .group-menu-panel button:hover {
+            background: #f3f4f6;
+        }
+        .group-dialog {
+            border: 1px solid #dee2e6;
+            border-radius: 0.5rem;
+            padding: 1rem;
+        }
+        .group-dialog label {
+            display: block;
+            margin-bottom: 0.75rem;
+        }
         .content {
             padding: 1rem;
         }
@@ -102,15 +161,36 @@
 <body>
     <header class="site-header">
         <div class="site-toolbar">
+            {% if user.is_authenticated %}
+            {% if current_group %}
+            <details class="group-menu">
+                <summary class="group-menu-card">{{ current_group.name }}</summary>
+                <div class="group-menu-panel">
+                    {% for group in user_groups %}
+                    <form method="post" action="{% url 'group_select' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="group" value="{{ group.id }}">
+                        <button type="submit">{{ group.name }}</button>
+                    </form>
+                    {% endfor %}
+                    <button type="button" onclick="document.getElementById('newGroupDialog').showModal()">Create a group</button>
+                </div>
+            </details>
+            {% else %}
+            <button type="button" class="create-group-button" onclick="document.getElementById('newGroupDialog').showModal()">Create a group</button>
+            {% endif %}
+            {% endif %}
             <h1 class="page-title">{% block page_title %}Service Scheduler{% endblock %}</h1>
             {% if user.is_authenticated %}
             <nav class="site-nav">
                 <a href="{% url 'schedules:index' %}">Schedules</a>
                 <a href="{% url 'messaging:new_email' %}">Messages</a>
+                <a href="{% url 'group_roster' %}">Groups</a>
             </nav>
             <details class="user-menu">
                 <summary class="user-menu-card">{{ user.first_name }} {{ user.last_name }}</summary>
                 <div class="user-menu-panel">
+                    <a href="{% url 'password_change' %}">Change password</a>
                     {% if user.is_superuser %}
                     <a href="{% url 'admin:index' %}">Admin</a>
                     {% endif %}
@@ -136,7 +216,7 @@
     
     <script>
         document.addEventListener("click", function (event) {
-            document.querySelectorAll(".user-menu[open]").forEach(function (menu) {
+            document.querySelectorAll(".user-menu[open], .group-menu[open]").forEach(function (menu) {
                 if (!menu.contains(event.target)) {
                     menu.removeAttribute("open");
                 }
@@ -144,5 +224,16 @@
         });
     </script>
     {% block extra_js %}{% endblock %}
+    {% if user.is_authenticated %}
+    <dialog id="newGroupDialog" class="group-dialog">
+        <form method="post" action="{% url 'group_create' %}">
+            {% csrf_token %}
+            <h2>Create a group</h2>
+            <label>Name <input type="text" name="name" required maxlength="100"></label>
+            <button type="submit">Create</button>
+            <button type="button" onclick="document.getElementById('newGroupDialog').close()">Cancel</button>
+        </form>
+    </dialog>
+    {% endif %}
 </body>
 </html>

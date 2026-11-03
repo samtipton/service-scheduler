@@ -24,13 +24,18 @@ from schedules.utils import (
     get_month_calendar,
     get_service_weeks,
 )
-from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
+
+from schedules.guard import visible_schedule
+from users.access import can_schedule, current_group, roster_for
 
 
+@method_decorator(ensure_csrf_cookie, name="get")
 class MonthView(generic.View):
 
     def get(self, request, id):
-        schedule = Schedule.objects.get(id=id)
+        schedule = visible_schedule(request, id)
 
         year = schedule.date.year
         month = schedule.date.month
@@ -40,9 +45,9 @@ class MonthView(generic.View):
         # Prefetch related objects to minimize queries
 
         # TODO check if we can prefetch tasks here
-        services = Service.objects.prefetch_related(
+        services = Service.objects.filter(group=schedule.group).prefetch_related(
             "tasks__users_with_preferences", "tasks__excludes"
-        ).all()
+        )
 
         assignments = schedule.assignments.select_related(
             "task", "user", "task__service"
@@ -74,15 +79,20 @@ class MonthView(generic.View):
         fairness_window = None
         if objective_name == FairJobsObjective.name:
             fairness_window = build_fairness_window(
-                schedule, services, get_user_model().objects.filter(is_active=True)
+                schedule, services, roster_for(schedule.group)
             )
 
         # create map of eligible users for each task sorted by assignment delta
         # or FairJobs ranking (count_so_far − target)
+        roster_ids = set(roster_for(schedule.group).values_list("pk", flat=True))
         eligible_users_for_task = defaultdict(list)
         for service in services:
             for task in service.tasks.all():
-                eligible_users = list(task.get_eligible_users())
+                eligible_users = [
+                    user
+                    for user in task.get_eligible_users()
+                    if user.pk in roster_ids
+                ]
                 if fairness_window is not None:
                     sorted_users = sorted(
                         eligible_users,
@@ -129,17 +139,18 @@ class MonthListView(generic.ListView):
     context_object_name = "schedules"
 
     def get_queryset(self):
-        return Schedule.objects.all().order_by("-date")
+        group = current_group(self.request)
+        if group is None:
+            return Schedule.objects.none()
+        return Schedule.objects.filter(group=group).order_by("-date")
 
 
-# TODO add csrf
-@csrf_exempt
 def generate_schedule_assignments(request, id):
     if request.method == "POST":
-        schedule = Schedule.objects.get(id=id)
-        services = Service.objects.prefetch_related(
+        schedule = visible_schedule(request, id)
+        services = Service.objects.filter(group=schedule.group).prefetch_related(
             "tasks__users_with_preferences", "tasks__excludes"
-        ).all()
+        )
 
         # parse results from schedule and send to generate
         # Could also take assignments from schedule itself
@@ -169,7 +180,7 @@ def update_assignments_in_schedule(schedule: Schedule, assignment_map: dict[str,
     """update assignments in database"""
     assignment_to_delete = []
     user_map = {
-        user.inverted_name(): user for user in get_user_model().objects.all()
+        user.inverted_name(): user for user in roster_for(schedule.group)
     }
 
     # Copy so we never mutate the caller's dict while iterating.
@@ -185,7 +196,7 @@ def update_assignments_in_schedule(schedule: Schedule, assignment_map: dict[str,
     # get tasks in batch, create map of task id to task
     # TODO add schedule to service model
     # TODO get tasks from schedule's services
-    tasks = Task.objects.all()
+    tasks = Task.objects.filter(group=schedule.group)
     task_map = {task.id: task for task in tasks}
 
     for date_task_str in assignment_to_delete:
@@ -224,13 +235,11 @@ def update_assignments_in_schedule(schedule: Schedule, assignment_map: dict[str,
             #     print(f"updated assignment {assignment}")
 
 
-# TODO add csrf
-@csrf_exempt
 def update_schedule(request, id):
     """update assignments in database"""
     if request.method == "PUT":
         assignment_map = json.loads(request.body) or {}
-        schedule = Schedule.objects.get(id=id)
+        schedule = visible_schedule(request, id)
         print(f"update schedule: {assignment_map}")
         if not schedule:
             print("schedule not found")
@@ -243,11 +252,9 @@ def update_schedule(request, id):
     return JsonResponse({"success": False}, status=405)
 
 
-# TODO move views into their own files
-@csrf_exempt
 def pdf(request, id):
     if request.method == "GET":
-        schedule = Schedule.objects.get(id=id)
+        schedule = visible_schedule(request, id)
         pdf_bytes = render_schedule_pdf(schedule)
         filename = pdf_filename(schedule)
 
@@ -271,26 +278,18 @@ def pdf(request, id):
     return HttpResponse(status=405)
 
 
-# TODO add csrf
-@csrf_exempt
 def clear_schedule(request, id):
-    """commit assignments to database"""
+    """Delete every assignment on a schedule this user can edit."""
 
-    schedule = Schedule.objects.get(id=id)
-    if request.method == "DELETE":
-        # only allow the user who created the schedule to clear it
-        if request.user == schedule.user:
-            print("clear schedule")
-            # get schedule and delete all assignments
-            schedule.assignments.all().delete()
-            return JsonResponse({"success": True})
-        else:
-            return JsonResponse({"success": False, "error": "Unauthorized"}, status=403)
-    return JsonResponse({"success": False}, status=405)
+    schedule = visible_schedule(request, id)
+    if request.method != "DELETE":
+        return JsonResponse({"success": False}, status=405)
+    schedule.assignments.all().delete()
+    return JsonResponse({"success": True})
 
 
 def delete_schedule(request, id):
-    schedule = get_object_or_404(Schedule, id=id)
+    schedule = visible_schedule(request, id)
     if request.method != "POST":
         return HttpResponseRedirect("/schedules/")
     if not schedule.can_be_deleted_by(request.user):
@@ -300,7 +299,7 @@ def delete_schedule(request, id):
 
 
 def rename_schedule(request, id):
-    schedule = get_object_or_404(Schedule, id=id)
+    schedule = visible_schedule(request, id)
     if request.method != "POST":
         return HttpResponseRedirect("/schedules/")
     if not schedule.can_be_deleted_by(request.user):
@@ -319,18 +318,23 @@ def create_schedule(request):
         date = request.POST.get("date")
         user = request.user
 
+        group = current_group(request)
+        if group is None or not can_schedule(request.user, group):
+            return HttpResponseForbidden("You cannot create a schedule.")
         base_schedule_id = request.POST.get("base_schedule")
         base_schedule = None
         if base_schedule_id:
-            base_schedule = get_object_or_404(Schedule, id=base_schedule_id)
+            base_schedule = visible_schedule(request, base_schedule_id)
+            if base_schedule.group_id != group.id:
+                return HttpResponseForbidden("You cannot create a schedule.")
 
-        # Create new schedule
         schedule = Schedule.objects.create(
             name=name,
             description=description,
             date=date,
             user=user,
             base_schedule=base_schedule,
+            group=group,
         )
 
         # Redirect to the schedule detail page

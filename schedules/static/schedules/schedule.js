@@ -15,6 +15,19 @@ document.addEventListener("DOMContentLoaded", (event) => {
       toastEl.style.opacity = "0.0";
     }
   
+    function csrfToken() {
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      if (meta && meta.content) {
+        return meta.content;
+      }
+      const input = document.querySelector("input[name=csrfmiddlewaretoken]");
+      if (input && input.value) {
+        return input.value;
+      }
+      const match = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
+      return match ? decodeURIComponent(match[1]) : "";
+    }
+
     function showToast(message) {
       if (this.toastTimer) {
         window.clearTimeout(this.toastTimer);
@@ -138,7 +151,8 @@ document.addEventListener("DOMContentLoaded", (event) => {
       await fetch(`generate`, {
         method: "POST",
         headers: {
-          'Content-Type': 'application/json'
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken(),
         },
         body: JSON.stringify({
           assignments: collectAssignments(),
@@ -199,6 +213,9 @@ document.addEventListener("DOMContentLoaded", (event) => {
 
       await fetch("clear", {
         method: "DELETE",
+        headers: {
+          "X-CSRFToken": csrfToken(),
+        },
       }).then((res) => {
         if (res.status === 200 || res.status === 304) {
           setTimeout(() => showToast("Done."), 1000);
@@ -262,6 +279,7 @@ document.addEventListener("DOMContentLoaded", (event) => {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken(),
           },
           body: JSON.stringify(payload),
           keepalive: !!options.keepalive,

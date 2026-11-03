@@ -1,8 +1,8 @@
-from django.core.management.base import BaseCommand
+from core.management.seed_guard import SeedCommand
 from schedules.models import Service
 
 
-class Command(BaseCommand):
+class Command(SeedCommand):
     help = "Seeds services into the database"
 
     def handle(self, *args, **options):

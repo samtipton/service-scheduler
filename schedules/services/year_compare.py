@@ -166,6 +166,7 @@ def _persist(schedule, assignment_map: dict[str, str]):
                 task=tasks[task_id],
                 user=users[inverted_name],
                 assigned_at=timezone.make_aware(datetime(on.year, on.month, on.day)),
+                group_id=schedule.group_id,
             )
         )
     Assignment.objects.bulk_create(rows)

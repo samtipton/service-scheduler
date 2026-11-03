@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
 from schedules.models import TaskPreference
-from .models import User
+from .models import Group, Membership, User
 
 
 class TaskPreferenceInline(admin.TabularInline):
@@ -37,3 +37,5 @@ class CustomUserAdmin(UserAdmin):
 
 
 admin.site.register(User, CustomUserAdmin)
+admin.site.register(Group)
+admin.site.register(Membership)

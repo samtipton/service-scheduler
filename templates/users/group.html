@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Groups{% endblock %}
+{% block page_title %}Groups{% endblock %}
+
+{% block extra_css %}
+<style>
+    .delete-group {
+        background: #b91c1c;
+        color: #fff;
+        border: none;
+        border-radius: 0.4rem;
+        padding: 0.45rem 0.8rem;
+        font: inherit;
+        cursor: pointer;
+    }
+    .delete-group-dialog {
+        border: 1px solid #fecaca;
+        border-radius: 0.5rem;
+        max-width: 32rem;
+        padding: 1rem;
+    }
+    .delete-group-dialog p {
+        line-height: 1.4;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if not group %}
+<p>Create a group to create a schedule.</p>
+{% else %}
+<h2>{{ group.name }}</h2>
+{% if can_manage %}
+<form method="post" action="{% url 'group_add' %}">
+    {% csrf_token %}
+    <label>Email <input type="email" name="email" required></label>
+    <label>Role
+        <select name="role">
+            {% for value, label in roles %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <button type="submit">Add</button>
+</form>
+{% if error %}
+<p role="alert">{{ error }}</p>
+{% endif %}
+<p>Adding an existing login does not send email. A link for someone without a login is not built yet.</p>
+{% endif %}
+<table>
+    <thead>
+        <tr><th>Name</th><th>Email</th><th>Role</th>{% if can_manage %}<th></th>{% endif %}</tr>
+    </thead>
+    <tbody>
+        {% for membership in memberships %}
+        <tr>
+            <td>{{ membership.user.last_name }}, {{ membership.user.first_name }}</td>
+            <td>{{ membership.user.email }}</td>
+            <td>
+                {% if can_manage %}
+                <form method="post" action="{% url 'group_role' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="membership" value="{{ membership.id }}">
+                    <select name="role" onchange="this.form.submit()">
+                        {% for value, label in roles %}
+                        <option value="{{ value }}" {% if membership.role == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+                {% else %}
+                {{ membership.get_role_display }}
+                {% endif %}
+            </td>
+            {% if can_manage %}
+            <td>
+                {% if membership.role != "admin" or admin_count > 1 %}
+                <form method="post" action="{% url 'group_remove' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="membership" value="{{ membership.id }}">
+                    <button type="submit">Remove</button>
+                </form>
+                {% endif %}
+            </td>
+            {% endif %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% if can_manage %}
+<p>
+    <button type="button" class="delete-group" onclick="document.getElementById('deleteGroupDialog').showModal()">Delete group</button>
+</p>
+<dialog id="deleteGroupDialog" class="delete-group-dialog">
+    <form method="post" action="{% url 'group_delete' %}">
+        {% csrf_token %}
+        <h2>Delete {{ group.name }}?</h2>
+        <p>This permanently deletes this group and everything that belongs to it: its schedules, services, tasks, preferences, assignments, and the sent mail for those schedules. People keep their accounts. Their membership in this group is removed. This cannot be undone.</p>
+        <button type="submit" class="delete-group">Delete this group</button>
+        <button type="button" onclick="document.getElementById('deleteGroupDialog').close()">Cancel</button>
+    </form>
+</dialog>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
-from django.core.management.base import BaseCommand
 from pathlib import Path
 import json
 import calendar
+
+from core.management.seed_guard import SeedCommand
 from schedules.models import Schedule, Service, Task, Assignment
 from users.models import User
 
@@ -13,7 +14,7 @@ class WeekIndexError(Exception):
     pass
 
 
-class Command(BaseCommand):
+class Command(SeedCommand):
     help = "Seeds assignments into the database from JSON"
 
     def __init__(self, *args, **kwargs):
@@ -22,6 +23,7 @@ class Command(BaseCommand):
         calendar.setfirstweekday(calendar.SUNDAY)
 
     def add_arguments(self, parser):
+        super().add_arguments(parser)
         parser.add_argument(
             "--json-path",
             type=str,

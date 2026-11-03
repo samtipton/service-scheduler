@@ -105,3 +105,35 @@ class User(AbstractUser):
 
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
+
+
+class Group(models.Model):
+    """One congregation. Other tables point at its numeric id."""
+
+    name = models.CharField(max_length=100)
+
+    def __str__(self):
+        return self.name
+
+
+class Membership(models.Model):
+    ADMIN = "admin"
+    SCHEDULER = "scheduler"
+    ROLE_CHOICES = [
+        (ADMIN, "Admin"),
+        (SCHEDULER, "Scheduler"),
+    ]
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="memberships"
+    )
+    group = models.ForeignKey(
+        Group, on_delete=models.CASCADE, related_name="memberships"
+    )
+    role = models.CharField(max_length=16, choices=ROLE_CHOICES)
+
+    class Meta:
+        unique_together = [("user", "group")]
+
+    def __str__(self):
+        return f"{self.user} in {self.group} ({self.role})"

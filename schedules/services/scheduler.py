@@ -70,7 +70,9 @@ class Scheduler:
         self.month = schedule.date.month
         self.services = services
         self.month_calendar, self.month_name = get_month_calendar(self.year, self.month)
-        self.users = list(get_user_model().objects.filter(is_active=True))
+        from users.access import roster_for
+
+        self.users = list(roster_for(schedule.group if schedule.group_id else None))
         self.service_days = {service.day_of_week for service in services}
         self.service_weeks = get_service_weeks(self.month_calendar, self.service_days)
         self.date_tasks = self.get_date_tasks()
@@ -94,11 +96,12 @@ class Scheduler:
 
         self.tasks = self.get_tasks()
         self.task_exclusions = self.get_exclusions()
-        self.task_requires = list(
-            TaskRequires.objects.filter(user__is_active=True).select_related(
-                "user", "task", "requires"
-            )
+        requires = TaskRequires.objects.filter(user__is_active=True).select_related(
+            "user", "task", "requires"
         )
+        if self.schedule.group_id:
+            requires = requires.filter(task__group=self.schedule.group)
+        self.task_requires = list(requires)
         self.task_requires_pairs = defaultdict(set)
         for req in self.task_requires:
             self.task_requires_pairs[req.user_id].add(
@@ -114,7 +117,10 @@ class Scheduler:
 
     def _load_preferences(self):
         prefs: defaultdict[int, dict[str, TaskPreference]] = defaultdict(dict)
-        for preference in TaskPreference.objects.all().select_related("user", "task"):
+        preferences = TaskPreference.objects.all().select_related("user", "task")
+        if self.schedule.group_id:
+            preferences = preferences.filter(group=self.schedule.group)
+        for preference in preferences:
             prefs[preference.user.pk][preference.task.id] = preference
         return prefs
 
@@ -133,6 +139,8 @@ class Scheduler:
         """All-time Assignment counts before this month. Not AssignmentStats."""
         month_start = date(self.year, self.month, 1)
         qs = Assignment.objects.filter(assigned_at__date__lt=month_start)
+        if self.schedule.group_id:
+            qs = qs.filter(group=self.schedule.group)
         if self.schedule.pk:
             qs = qs.exclude(schedule_id=self.schedule.pk)
 

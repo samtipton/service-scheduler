@@ -14,7 +14,19 @@ class BrevoError(Exception):
     pass
 
 
+def post_plain_email(*, to, subject, body):
+    """One plain message, no attachment. Used for password links."""
+    return _post(to=to, bcc=None, subject=subject, body=body, attachment=None)
+
+
 def post_email(*, to, bcc, subject, body, pdf_bytes, pdf_name):
+    attachment = [
+        {"content": b64encode(pdf_bytes).decode("ascii"), "name": pdf_name}
+    ]
+    return _post(to=to, bcc=bcc, subject=subject, body=body, attachment=attachment)
+
+
+def _post(*, to, bcc, subject, body, attachment):
     api_key = settings.BREVO_API_KEY
     if not api_key:
         print("BREVO_API_KEY is missing; email not sent")
@@ -27,10 +39,9 @@ def post_email(*, to, bcc, subject, body, pdf_bytes, pdf_name):
         "to": [{"email": email} for email in to],
         "subject": subject,
         "textContent": body,
-        "attachment": [
-            {"content": b64encode(pdf_bytes).decode("ascii"), "name": pdf_name}
-        ],
     }
+    if attachment:
+        payload["attachment"] = attachment
     if bcc:
         payload["bcc"] = [{"email": email} for email in bcc]
 

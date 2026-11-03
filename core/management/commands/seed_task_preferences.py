@@ -1,15 +1,17 @@
 from datetime import datetime
-from django.core.management.base import BaseCommand
 from pathlib import Path
 import csv
+
+from core.management.seed_guard import SeedCommand
 from schedules.models import Task, TaskPreference
 from users.models import User
 
 
-class Command(BaseCommand):
+class Command(SeedCommand):
     help = "Seeds task preferences into the database from CSV files"
 
     def add_arguments(self, parser):
+        super().add_arguments(parser)
         parser.add_argument(
             "--fixtures-path",
             type=str,

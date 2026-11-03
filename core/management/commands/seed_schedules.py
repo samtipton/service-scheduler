@@ -2,14 +2,14 @@ import calendar
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
-from django.core.management.base import BaseCommand
 import pytz
 
+from core.management.seed_guard import SeedCommand
 from schedules.models import Schedule
 from users.models import User
 
 
-class Command(BaseCommand):
+class Command(SeedCommand):
     help = "Seeds schedules into the database"
 
     def __init__(self, *args, **kwargs):

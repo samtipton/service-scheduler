@@ -1,15 +1,21 @@
 from datetime import datetime, timezone
-from django.core.management.base import BaseCommand
 from pathlib import Path
 import csv
-from users.models import User
+
 from decouple import config
 
+from django.core.management.base import CommandError
 
-class Command(BaseCommand):
+from core.management.seed_guard import SeedCommand
+from users.access import sole_group
+from users.models import Membership, User
+
+
+class Command(SeedCommand):
     help = "Seeds users into the database from CSV"
 
     def add_arguments(self, parser):
+        super().add_arguments(parser)
         parser.add_argument(
             "--csv-path",
             type=str,
@@ -55,11 +61,14 @@ class Command(BaseCommand):
                     )
                 )
 
-        # filter out users that already exist
-        existing_emails = set(User.objects.values_list("email", flat=True))
-
+        group = sole_group()
+        if group is None:
+            raise CommandError(
+                "Create one group before seeding users. Refusing to guess when there are zero or several."
+            )
         for user in parsed_users:
-            if not user.email in existing_emails:
+            obj = User.objects.filter(email=user.email).first()
+            if obj is None:
                 if user.email == "sam.tipton@gmail.com":
                     obj = User.objects.create_superuser(
                         email=user.email,
@@ -77,3 +86,11 @@ class Command(BaseCommand):
                         password=user.password,
                     )
                     self.stdout.write(self.style.SUCCESS(f"Created User: {str(obj)}"))
+            role = (
+                Membership.ADMIN
+                if obj.is_superuser or obj.is_staff
+                else Membership.SCHEDULER
+            )
+            Membership.objects.get_or_create(
+                user=obj, group=group, defaults={"role": role}
+            )

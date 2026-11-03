@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Logins{% endblock %}
+{% block page_title %}Logins{% endblock %}
+{% block content %}
+<h2>New login</h2>
+<form method="post" action="{% url 'member_create' %}">
+    {% csrf_token %}
+    <p>
+        <label>Group
+            <select name="group">
+                {% for group in groups %}
+                <option value="{{ group.pk }}">{{ group.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </p>
+    <p><label>Email <input type="email" name="email" required></label></p>
+    <p><label>First name <input type="text" name="first_name" required></label></p>
+    <p><label>Last name <input type="text" name="last_name" required></label></p>
+    <p>
+        <label>Role
+            <select name="role">
+                {% for value, label in roles %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+    </p>
+    <button type="submit">Create login</button>
+</form>
+
+<h2>Members</h2>
+<table>
+    <thead>
+        <tr><th>Name</th><th>Email</th><th>Group</th><th>Role</th><th>Active</th><th></th></tr>
+    </thead>
+    <tbody>
+        {% for membership in memberships %}
+        <tr>
+            <td>{{ membership.user.first_name }} {{ membership.user.last_name }}</td>
+            <td>{{ membership.user.email }}</td>
+            <td>{{ membership.group.name }}</td>
+            <td>{{ membership.get_role_display }}</td>
+            <td>{{ membership.user.is_active|yesno:"yes,no" }}</td>
+            <td>
+                {% if membership.user.is_active and membership.user.pk != user.pk %}
+                <form method="post" action="{% url 'member_deactivate' membership.pk %}">
+                    {% csrf_token %}
+                    <button type="submit">Deactivate</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

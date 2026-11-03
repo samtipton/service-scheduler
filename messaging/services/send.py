@@ -56,13 +56,13 @@ def _deliver(schedule, template, sent_by, recipients):
 def send_schedule_email(schedule, template, sent_by):
     """Mail every active user. To is the From address. The roster is BCC.
 
-    Group scoping waits on accounts. Writes one SentEmail after every chunk
-    is accepted. A failed first chunk leaves no row. A later failure records
-    the addresses already accepted.
+    The roster is the active members of the schedule's group. Writes one
+    SentEmail after every chunk is accepted. A failed first chunk leaves no
+    row. A later failure records the addresses already accepted.
     """
     roster_emails = [
         email
-        for email in active_roster().values_list("email", flat=True)
+        for email in active_roster(schedule.group).values_list("email", flat=True)
         if email != FROM_EMAIL
     ]
     if not roster_emails:

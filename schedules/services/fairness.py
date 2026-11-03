@@ -96,7 +96,10 @@ def build_fairness_window(schedule: Schedule, services: list[Service], users) ->
     user_ids = {u.pk for u in users}
     preference = {}
     preference_total = defaultdict(float)
-    for pref in TaskPreference.objects.filter(value__gt=0, user_id__in=user_ids):
+    preferences = TaskPreference.objects.filter(value__gt=0, user_id__in=user_ids)
+    if schedule.group_id:
+        preferences = preferences.filter(group=schedule.group)
+    for pref in preferences:
         preference[(pref.user_id, pref.task_id)] = pref.value
         preference_total[pref.task_id] += pref.value
 
@@ -104,6 +107,8 @@ def build_fairness_window(schedule: Schedule, services: list[Service], users) ->
         assigned_at__date__gte=window_start,
         assigned_at__date__lt=month_start,
     ).select_related("user")
+    if schedule.group_id:
+        qs = qs.filter(group=schedule.group)
     if schedule.pk:
         qs = qs.exclude(schedule_id=schedule.pk)
     assignments = list(qs)

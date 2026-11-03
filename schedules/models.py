@@ -78,10 +78,14 @@ class Schedule(models.Model):
         return f"{self.name} ({status}) - {self.date.strftime('%B %Y')}"
 
     def can_be_deleted_by(self, user):
-        """Creator or staff. No groups/RBAC yet."""
+        """Creator, staff, or an admin of this schedule's group."""
         if user is None or not user.is_authenticated:
             return False
-        return user.pk == self.user_id or user.is_staff or user.is_superuser
+        if user.pk == self.user_id or user.is_staff or user.is_superuser:
+            return True
+        from users.access import can_admin
+
+        return can_admin(user, self.group_id)
 
     def select_as_official(self):
         """TO REMOVE: is_official is unused. History is Assignment rows."""
@@ -253,8 +257,18 @@ class Schedule(models.Model):
         self._cleanup_old_stats()
         self.generate_assignment_stats()
 
+    group = models.ForeignKey(
+        "users.Group",
+        on_delete=models.CASCADE,
+        related_name="schedules",
+    )
+
     def save(self, *args, **kwargs):
         """Update statistics before saving"""
+        if self.group_id is None:
+            from users.access import require_group
+
+            self.group = require_group()
         self.updated_at = timezone.now()
         super().save(*args, **kwargs)
 
@@ -280,11 +294,18 @@ class Service(models.Model):
         blank=True, null=True, validators=[MinValueValidator(0), MaxValueValidator(6)]
     )
     start_time = models.TimeField()
+    group = models.ForeignKey(
+        "users.Group",
+        on_delete=models.CASCADE,
+        related_name="services",
+    )
 
-    # TODO add groups
-    # group = models.ForeignKey(Group, on_delete=models.RESTRICT)
+    def save(self, *args, **kwargs):
+        if self.group_id is None:
+            from users.access import require_group
 
-    # TODO add schedule
+            self.group = require_group()
+        super().save(*args, **kwargs)
 
     class Meta:
         ordering = [
@@ -344,11 +365,15 @@ class Task(models.Model):
 
     time_period = models.CharField(max_length=10, choices=TIME_PERIOD_CHOICES)
 
-    # TODO We can add unique_together with group later when groups are implemented
-    # class Meta:
-    #     unique_together = ['task_id', 'group']
+    # id stays a globally unique code (song_leader, lesson). A second group's
+    # copy needs a different id. Do not switch this primary key to AutoField.
 
     objects = TaskManager()
+    group = models.ForeignKey(
+        "users.Group",
+        on_delete=models.CASCADE,
+        related_name="tasks",
+    )
     order = models.IntegerField(default=0, help_text="Used for ordering tasks")
     rotation_group = models.CharField(
         max_length=32,
@@ -365,6 +390,12 @@ class Task(models.Model):
         ordering = ["order", "id"]
 
     def save(self, *args, **kwargs):
+        if self.group_id is None and self.service_id:
+            self.group_id = self.service.group_id
+        if self.group_id is None:
+            from users.access import require_group
+
+            self.group = require_group()
         super().save(*args, **kwargs)
         self.excludes.add(self)
 
@@ -397,6 +428,22 @@ class Assignment(models.Model):
         blank=True,
         db_index=True,
     )
+    group = models.ForeignKey(
+        "users.Group",
+        on_delete=models.CASCADE,
+        related_name="assignments",
+    )
+
+    def save(self, *args, **kwargs):
+        if self.group_id is None and self.schedule_id:
+            self.group_id = self.schedule.group_id
+        if self.group_id is None and self.task_id:
+            self.group_id = self.task.group_id
+        if self.group_id is None:
+            from users.access import require_group
+
+            self.group = require_group()
+        super().save(*args, **kwargs)
 
     class Meta:
         ordering = ["-assigned_at"]
@@ -427,6 +474,20 @@ class TaskPreference(models.Model):
     task = models.ForeignKey(Task, on_delete=models.RESTRICT)
     value = models.FloatField(validators=[MinValueValidator(0.0)])
     updated_at = models.DateField(auto_now_add=True)
+    group = models.ForeignKey(
+        "users.Group",
+        on_delete=models.CASCADE,
+        related_name="task_preferences",
+    )
+
+    def save(self, *args, **kwargs):
+        if self.group_id is None and self.task_id:
+            self.group_id = self.task.group_id
+        if self.group_id is None:
+            from users.access import require_group
+
+            self.group = require_group()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.task_id}"

@@ -2,5 +2,9 @@
 
 {% block email_content %}
 <h2>New email</h2>
+{% if current_group %}
 {% include "messaging/_compose.html" %}
+{% else %}
+<p>Create a group to send a schedule.</p>
+{% endif %}
 {% endblock %}

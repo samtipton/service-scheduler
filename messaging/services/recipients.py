@@ -4,14 +4,14 @@ from django.contrib.auth import get_user_model
 ATTACHMENT_RECIPIENT_LIMIT = 99
 
 
-def active_roster():
-    """Active users with an email.
-
-    When groups exist, this becomes the active members of the schedule's group.
-    """
+def active_roster(group):
+    """Active members of this group who have an email."""
     User = get_user_model()
-    return User.objects.filter(is_active=True).exclude(email="").order_by(
-        "last_name", "first_name", "email"
+    return (
+        User.objects.filter(is_active=True, memberships__group=group)
+        .exclude(email="")
+        .order_by("last_name", "first_name", "email")
+        .distinct()
     )
 
 

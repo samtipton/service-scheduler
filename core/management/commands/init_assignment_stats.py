@@ -1,10 +1,11 @@
-from django.core.management.base import BaseCommand
 from django.db import transaction
+
+from core.management.seed_guard import SeedCommand
 from schedules.models import Task, AssignmentStats, Schedule
 from decimal import Decimal
 
 
-class Command(BaseCommand):
+class Command(SeedCommand):
     help = "Initialize assignment statistics for all user/task combinations"
 
     def handle(self, *args, **options):

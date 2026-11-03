@@ -11,7 +11,11 @@
 
 {% block content %}
 
+{% if current_group %}
 <button type="button" class="create-schedule" onclick="document.getElementById('newScheduleDialog').showModal()">Create New Schedule</button>
+{% else %}
+<p>Create a group to create a schedule.</p>
+{% endif %}
 
 {% if schedules %}
     <ul>
@@ -35,9 +39,12 @@
     {% endfor %}
     </ul>
 {% else %}
+    {% if current_group %}
     <p>No schedules are available.</p>
+    {% endif %}
 {% endif %}
 
+{% if current_group %}
 <dialog id="newScheduleDialog">
     <h2>Create New Schedule</h2>
     <form method="POST" action="{% url 'schedules:create_schedule' %}">
@@ -69,6 +76,7 @@
       </div>
     </form>
   </dialog>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}

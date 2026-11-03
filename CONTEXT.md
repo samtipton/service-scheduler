@@ -4,7 +4,7 @@ Django app that assigns congregation men to recurring worship tasks with integer
 
 **Stack:** Django 5.1 · PostgreSQL · PuLP/CBC · vanilla JS · pdfkit
 
-Volunteers are login `User`s. Single congregation. Publish email is shipped (`messaging`, `docs/features/email.md`). Charts, multi-church isolation, reminders, TaskCycle, and dropping `base_schedule` / `is_official` are planned: `docs/features/`. Groups wait (`docs/features/accounts.md`).
+Volunteers are login `User`s. A `Group` is one congregation. Membership is `admin` or `scheduler`. The Sunday grid's group is named Olsen Park. Publish email is shipped (`messaging`, `docs/features/email.md`). Charts, reminders, TaskCycle, and dropping `base_schedule` / `is_official` are planned: `docs/features/`. There is no `Person` model. `Task.id` stays a globally unique code.
 
 ## Domain
 

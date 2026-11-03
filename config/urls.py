@@ -17,10 +17,12 @@ Including another URLconf
 
 from django.conf import settings
 from django.contrib import admin
+from django.contrib.auth import views as auth_views
 from django.urls import include, path
 from django.views.generic import RedirectView
-from debug_toolbar.toolbar import debug_toolbar_urls
-from django.contrib.auth import views as auth_views
+
+from users import group_views, views as user_views
+from users.mail import BrevoPasswordResetForm
 
 urlpatterns = [
     path("", RedirectView.as_view(pattern_name="schedules:index", permanent=False)),
@@ -44,7 +46,46 @@ urlpatterns = [
         auth_views.PasswordChangeDoneView.as_view(),
         name="password_change_done",
     ),
+    path(
+        "password_reset/",
+        auth_views.PasswordResetView.as_view(
+            form_class=BrevoPasswordResetForm,
+            email_template_name="registration/password_reset_email.txt",
+        ),
+        name="password_reset",
+    ),
+    path(
+        "password_reset/done/",
+        auth_views.PasswordResetDoneView.as_view(),
+        name="password_reset_done",
+    ),
+    path(
+        "reset/<uidb64>/<token>/",
+        auth_views.PasswordResetConfirmView.as_view(),
+        name="password_reset_confirm",
+    ),
+    path(
+        "reset/done/",
+        auth_views.PasswordResetCompleteView.as_view(),
+        name="password_reset_complete",
+    ),
+    path("groups/", group_views.group_roster, name="group_roster"),
+    path("groups/select/", group_views.group_select, name="group_select"),
+    path("groups/create/", group_views.group_create, name="group_create"),
+    path("groups/add/", group_views.group_add, name="group_add"),
+    path("groups/role/", group_views.group_role, name="group_role"),
+    path("groups/remove/", group_views.group_remove, name="group_remove"),
+    path("groups/delete/", group_views.group_delete, name="group_delete"),
+    path("account/members/", user_views.member_list, name="members"),
+    path("account/members/new/", user_views.member_create, name="member_create"),
+    path(
+        "account/members/<int:pk>/deactivate/",
+        user_views.member_deactivate,
+        name="member_deactivate",
+    ),
 ]
 
 if settings.DEBUG and not settings.TESTING:
+    from debug_toolbar.toolbar import debug_toolbar_urls
+
     urlpatterns += debug_toolbar_urls()

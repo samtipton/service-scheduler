@@ -15,6 +15,7 @@ from messaging.services.recipients import active_roster, bcc_chunks
 from messaging.services.brevo import FROM_EMAIL
 from schedules.models import Schedule, Service
 from schedules.services.pdf import render_schedule_pdf
+from users.models import Group, Membership
 
 
 class PlaceholderTests(TestCase):
@@ -39,17 +40,29 @@ class RosterTests(TestCase):
             first_name="Active",
             last_name="Member",
         )
-        User.objects.create_user(
+        inactive = User.objects.create_user(
             email="test+inactive@example.com",
             first_name="Inactive",
             last_name="Member",
             is_active=False,
         )
+        outsider = User.objects.create_user(
+            email="test+outsider@example.com",
+            first_name="Outside",
+            last_name="Member",
+        )
+        group = Group.objects.get()
+        active = User.objects.get(email="test+active@example.com")
+        Membership.objects.create(user=active, group=group, role=Membership.SCHEDULER)
+        Membership.objects.create(
+            user=inactive, group=group, role=Membership.SCHEDULER
+        )
 
-        emails = list(active_roster().values_list("email", flat=True))
+        emails = list(active_roster(group).values_list("email", flat=True))
 
         self.assertIn("test+active@example.com", emails)
         self.assertNotIn("test+inactive@example.com", emails)
+        self.assertNotIn(outsider.email, emails)
 
     def test_bcc_chunks_stay_within_the_attachment_cap(self):
         chunks = bcc_chunks([f"test+{i}@example.com" for i in range(100)])
@@ -83,6 +96,12 @@ class SendTests(TestCase):
             name="October",
             date=date(2026, 10, 1),
             user=self.user,
+        )
+        Membership.objects.create(
+            user=self.user, group=self.schedule.group, role=Membership.SCHEDULER
+        )
+        Membership.objects.create(
+            user=self.other, group=self.schedule.group, role=Membership.SCHEDULER
         )
         for name in ("Sunday AM", "Sunday PM", "Wednesday", "Other"):
             Service.objects.create(name=name, day_of_week=0, start_time="09:00")
@@ -355,6 +374,9 @@ class PageTests(TestCase):
             body="Body",
             sent_by=self.user,
             recipients="test+one@example.com",
+        )
+        Membership.objects.create(
+            user=self.user, group=schedule.group, role=Membership.SCHEDULER
         )
         SentEmail.objects.filter(pk=sent.pk).update(
             sent_at=datetime(2026, 11, 1, 21, 12, tzinfo=datetime_timezone.utc)
