@@ -53,7 +53,7 @@ class MonthView(generic.View):
             "task", "user", "task__service"
         )
         assignment_stats = AssignmentStats.objects.filter(
-            schedule=schedule if assignments.count() > 0 else schedule.base_schedule
+            schedule=schedule
         ).select_related("task", "user")
 
         service_days = {service.day_of_week for service in services}
@@ -321,19 +321,12 @@ def create_schedule(request):
         group = current_group(request)
         if group is None or not can_schedule(request.user, group):
             return HttpResponseForbidden("You cannot create a schedule.")
-        base_schedule_id = request.POST.get("base_schedule")
-        base_schedule = None
-        if base_schedule_id:
-            base_schedule = visible_schedule(request, base_schedule_id)
-            if base_schedule.group_id != group.id:
-                return HttpResponseForbidden("You cannot create a schedule.")
 
         schedule = Schedule.objects.create(
             name=name,
             description=description,
             date=date,
             user=user,
-            base_schedule=base_schedule,
             group=group,
         )
 

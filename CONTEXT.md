@@ -4,7 +4,7 @@ Django app that assigns congregation men to recurring worship tasks with integer
 
 **Stack:** Django 5.1 · PostgreSQL · PuLP/CBC · vanilla JS · pdfkit
 
-Volunteers are login `User`s. A `Group` is one congregation. Membership is `admin` or `scheduler`. The Sunday grid's group is named Olsen Park. Publish email is shipped (`messaging`, `docs/features/email.md`). Charts, reminders, TaskCycle, and dropping `base_schedule` / `is_official` are planned: `docs/features/`. There is no `Person` model. `Task.id` stays a globally unique code.
+Volunteers are login `User`s. A `Group` is one congregation. Membership is `admin` or `scheduler`. The Sunday grid's group is named Olsen Park. Publish email is shipped (`messaging`, `docs/features/email.md`). Charts, reminders, and TaskCycle are planned: `docs/features/`. There is no `Person` model. `Task.id` stays a globally unique code.
 
 ## Domain
 
@@ -12,7 +12,7 @@ Volunteers are login `User`s. A `Group` is one congregation. Membership is `admi
 - **Task** — role on a service. Symmetric `excludes` (cannot hold both in the same week). Each task also excludes itself on save.
 - **TaskRequires** — person-specific: when assigned `task`, also assign `requires` the same week. Skips that pair’s exclusion for this person only. Directional. Eligible (`p > 0`) for both.
 - **TaskPreference** `p(u,t) ≥ 0` — `0` never assign, `(0,1)` below baseline, `1` baseline, `>1` want more. No upper bound. A 1-task man on a crowded role (e.g. Lord’s supper aid) who wants more Sundays raises `p` on that task. Small pools (song leader) stay at `p = 1` so one specialist is not over-represented. Church-specific; not a solver special case.
-- **Schedule** — one month. Optional `base_schedule` (previous month). `is_official` is unused (to remove). History is Assignment rows.
+- **Schedule** — one month. History is Assignment rows. There is no parent schedule and no official flag.
 - **Assignment** — person + task + datetime on a schedule. Source of truth for history and fairness.
 - **AssignmentStats** — derived snapshot (`ideal_average`, `actual_average`, `assignment_delta`), M2M to schedules. Recalculated on assignment save. Lifetime share. FairJobs does not read it; Catch-up share datalist sort uses `assignment_delta`.
 
@@ -42,10 +42,10 @@ Same hard rules for both objectives. Binary `x[(date_task, user)]` for each elig
 | Exclusions | Cannot hold two excluding tasks in the same Sunday-start week (`x_a + x_b ≤ 1`). Weekly holes pair with that week’s Sunday/Wednesday, not by list index. Skipped for a person who has `TaskRequires` on that pair. |
 | TaskRequires | If this person takes `task`, they take `requires` that week (`x_task ≤ x_requires`). They can still hold `requires` alone. |
 | Consecutive week | Same person, same task, two weeks in a row, including month boundary — skipped when the eligible pool is size 1 |
-| Rotation family (FairJobs) | Soft: `Task.rotation_group`. Jobs of that family in two neighboring Sunday-start weeks: at most one, plus spill. Cost `rotation_weight` per extra job. Includes the previous month via `base_schedule`. |
+| Rotation family (FairJobs) | Soft: `Task.rotation_group`. Jobs of that family in two neighboring Sunday-start weeks: at most one, plus spill. Cost `rotation_weight` per extra job. Includes assignments in the seven days before this month. |
 | Per-task spread | At most one if people > slots; else each eligible person at least once, at most `⌈slots/people⌉` |
 | Cap 7 | Max assignments per person this month |
-| Locks | Current cells and previous-month `base_schedule` rows are extra ILP variables with `x == 1`. That `(task, user)` skips consecutive-week and per-task spread. |
+| Locks | Current cells, and assignments in the seven days before this month, are extra ILP variables with `x == 1`. That `(task, user)` skips consecutive-week and per-task spread. |
 
 CBC typically a few seconds. Persist is `"YYYY-M-D-task_id" → "Last, First"`.
 

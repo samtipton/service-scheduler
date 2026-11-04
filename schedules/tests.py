@@ -612,26 +612,23 @@ class ScheduleTestCase(TestCase):
         TaskPreference.objects.create(user=self.user1, task=self.task, value=1.0)
         TaskPreference.objects.create(user=self.user2, task=self.task, value=1.0)
 
-        # Create a base schedule
-        self.base_schedule = Schedule.objects.create(
+        self.may_schedule = Schedule.objects.create(
             name="May 2023 Schedule",
             date=datetime.date(2023, 5, 1),
             user=self.user1,
-            is_official=True,
         )
 
-        # Create assignments for the base schedule
         self.assignment1 = Assignment.objects.create(
             user=self.user1,
             task=self.task,
             assigned_at=timezone.now(),
-            schedule=self.base_schedule,
+            schedule=self.may_schedule,
         )
         self.assignment2 = Assignment.objects.create(
             user=self.user2,
             task=self.task,
             assigned_at=timezone.now(),
-            schedule=self.base_schedule,
+            schedule=self.may_schedule,
         )
 
         # Create stats for both users
@@ -642,91 +639,13 @@ class ScheduleTestCase(TestCase):
         schedule = Schedule.objects.create(
             name="June 2023 Schedule",
             date=datetime.date(2023, 6, 1),
+            description="Test description",
             user=self.user1,
         )
         self.assertEqual(schedule.name, "June 2023 Schedule")
         self.assertEqual(schedule.date, datetime.date(2023, 6, 1))
         self.assertEqual(schedule.user, self.user1)
-        self.assertFalse(schedule.is_official)
-
-    def test_create_from_base(self):
-        # Create a new schedule based on the base schedule
-        new_schedule = Schedule.objects.create_from_base(
-            name="June 2023 Schedule",
-            date=datetime.date(2023, 6, 1),
-            user=self.user2,
-            base_schedule=self.base_schedule,
-            description="Test description",
-        )
-
-        # Check basic attributes
-        self.assertEqual(new_schedule.name, "June 2023 Schedule")
-        self.assertEqual(new_schedule.date, datetime.date(2023, 6, 1))
-        self.assertEqual(new_schedule.user, self.user2)
-        self.assertEqual(new_schedule.description, "Test description")
-        self.assertEqual(new_schedule.base_schedule, self.base_schedule)
-        self.assertFalse(new_schedule.is_official)
-
-        # Check that assignments were copied
-        self.assertEqual(new_schedule.base_schedule.get_assignments().count(), 2)
-
-        # Verify user assignments were preserved
-        user_counts = {}
-        for user_id, count in (
-            new_schedule.base_schedule.get_assignments()
-            .values_list("user")
-            .annotate(count=Count("user", distinct=True))
-        ):
-            user_counts[user_id] = count
-
-        self.assertEqual(user_counts.get(self.user1.id), 1)
-        self.assertEqual(user_counts.get(self.user2.id), 1)
-
-    def test_select_as_official(self):
-        # Create two schedules for the same month
-        schedule1 = Schedule.objects.create(
-            name="June 2023 Schedule A",
-            date=datetime.date(2023, 6, 1),
-            user=self.user1,
-        )
-        schedule2 = Schedule.objects.create(
-            name="June 2023 Schedule B",
-            date=datetime.date(2023, 6, 15),
-            user=self.user2,
-        )
-
-        # Mark the first one as selected
-        schedule1.select_as_official()
-        schedule1.refresh_from_db()
-        schedule2.refresh_from_db()
-
-        # Check that the first one is selected
-        self.assertTrue(schedule1.is_official)
-        self.assertFalse(schedule2.is_official)
-
-        # Mark the second one as selected
-        schedule2.select_as_official()
-        schedule1.refresh_from_db()
-        schedule2.refresh_from_db()
-
-        # Check that the second one is now selected and the first one is not
-        self.assertFalse(schedule1.is_official)
-        self.assertTrue(schedule2.is_official)
-
-    def test_get_latest_selected(self):
-        # May is already created and selected in setUp
-
-        # Create June schedule and mark as selected
-        june_schedule = Schedule.objects.create(
-            name="June 2023 Schedule",
-            date=datetime.date(2023, 6, 1),
-            user=self.user1,
-        )
-        june_schedule.select_as_official()
-
-        # Get the latest selected
-        latest = Schedule.objects.get_latest_selected()
-        self.assertEqual(latest, june_schedule)
+        self.assertEqual(schedule.description, "Test description")
 
     def test_create_assignment(self):
         schedule = Schedule.objects.create(
@@ -748,7 +667,7 @@ class ScheduleTestCase(TestCase):
 
     def test_get_assignments(self):
         # Get assignments from the base schedule
-        assignments = self.base_schedule.get_assignments()
+        assignments = self.may_schedule.get_assignments()
         self.assertEqual(assignments.count(), 2)
         self.assertIn(self.assignment1, assignments)
         self.assertIn(self.assignment2, assignments)
@@ -757,11 +676,7 @@ class ScheduleTestCase(TestCase):
         schedule = Schedule.objects.create(
             name="Test Schedule", date=datetime.date(2023, 6, 1), user=self.user1
         )
-        self.assertEqual(str(schedule), "Test Schedule (Draft) - June 2023")
-
-        schedule.is_official = True
-        schedule.save()
-        self.assertEqual(str(schedule), "Test Schedule (Selected) - June 2023")
+        self.assertEqual(str(schedule), "Test Schedule - June 2023")
 
 
 class DeleteScheduleViewTests(TestCase):

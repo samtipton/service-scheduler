@@ -1,5 +1,4 @@
 from django.contrib import admin
-from django.contrib import messages
 from .models import (
     AssignmentStats,
     Service,
@@ -97,28 +96,8 @@ class AssignmentInline(admin.TabularInline):
 
 @admin.register(Schedule)
 class ScheduleAdmin(admin.ModelAdmin):
-    list_display = ("name", "date", "user", "is_official", "created_at")
-    list_filter = ("is_official", "date", "user")
+    list_display = ("name", "date", "user", "created_at")
+    list_filter = ("date", "user")
     search_fields = ("name", "description")
     date_hierarchy = "date"
-    actions = ("mark_as_official",)
     inlines = (AssignmentInline,)
-
-    def mark_as_official(self, request, queryset):
-        if queryset.count() != 1:
-            self.message_user(
-                request,
-                "Please select exactly one schedule to mark as selected",
-                level=messages.ERROR,
-            )
-            return
-
-        schedule = queryset.first()
-        schedule.select_as_official()
-        self.message_user(
-            request,
-            f"Schedule '{schedule.name}' has been marked as official for {schedule.date.strftime('%B %Y')}",
-            level=messages.SUCCESS,
-        )
-
-    mark_as_official.short_description = "Mark schedule as official"

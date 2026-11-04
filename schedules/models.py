@@ -1,4 +1,3 @@
-from datetime import date, timedelta
 from decimal import Decimal
 from django.db import models
 from django.contrib.auth import get_user_model
@@ -9,36 +8,8 @@ from django.dispatch import receiver
 from schedules.decorators import round_decimal
 
 
-class ScheduleManager(models.Manager):
-    def get_latest_selected(self):
-        """TO REMOVE: is_official is unused. History is Assignment rows."""
-        return self.filter(is_official=True).order_by("-date").first()
-
-    def create_from_base(self, name, date, user, base_schedule=None, description=None):
-        """
-        Create a new schedule based on an existing one or from scratch.
-        """
-        # If no base schedule provided, use the most recent selected schedule
-        if base_schedule is None:
-            base_schedule = self.get_latest_selected()
-
-        # Create the new schedule
-        schedule = self.create(
-            name=name,
-            date=date,
-            user=user,
-            base_schedule=base_schedule,
-            description=description,
-        )
-
-        return schedule
-
-
 class Schedule(models.Model):
-    """
-    A Schedule represents a collection of assignments for a specific month and year.
-    It works similar to git commits, with each schedule potentially building on a previous one.
-    """
+    """One month of assignments. History is the Assignment rows, not a parent schedule."""
 
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
@@ -52,30 +23,11 @@ class Schedule(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
 
-    # The base schedule this one builds upon (like a parent commit)
-    base_schedule = models.ForeignKey(
-        "self",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="derived_schedules",
-        help_text="Previous schedule this one builds upon",
-    )
-
-    # TO REMOVE: unused. History and fairness read Assignment rows.
-    is_official = models.BooleanField(
-        default=False,
-        help_text="TO REMOVE: unused. History is Assignment rows.",
-    )
-
-    objects = ScheduleManager()
-
     class Meta:
         ordering = ["-date", "-created_at"]
 
     def __str__(self):
-        status = "Selected" if self.is_official else "Draft"
-        return f"{self.name} ({status}) - {self.date.strftime('%B %Y')}"
+        return f"{self.name} - {self.date.strftime('%B %Y')}"
 
     def can_be_deleted_by(self, user):
         """Creator, staff, or an admin of this schedule's group."""
@@ -87,28 +39,6 @@ class Schedule(models.Model):
 
         return can_admin(user, self.group_id)
 
-    def select_as_official(self):
-        """TO REMOVE: is_official is unused. History is Assignment rows."""
-        month_start = date(self.date.year, self.date.month, 1)
-        month_end = date(
-            self.date.year + (self.date.month // 12), ((self.date.month % 12) + 1), 1
-        ) - timedelta(days=1)
-
-        # Unselect any other official schedules for this month
-        # This ensures only one schedule is official per month, which is important for:
-        # 1. Maintaining a single source of truth for the month
-        # 2. Proper cleanup of stats (we know which stats to keep)
-        # 3. Other parts of the system that rely on knowing the current official schedule
-        other_official_schedules = Schedule.objects.filter(
-            date__gte=month_start, date__lte=month_end, is_official=True
-        ).exclude(id=self.id)
-        other_official_schedules.update(is_official=False)
-
-        # Then mark this one as selected
-        # Note: AssignmentStats are now created automatically via signal when assignments are created
-        self.is_official = True
-        self.save()
-
     def generate_assignment_stats(self):
         """Generate assignment stats for this schedule.
         For user/task combinations with assignments in this schedule, create new stats.
@@ -116,7 +46,7 @@ class Schedule(models.Model):
         Only creates stats for users who have assignments or preferences.
 
         Note: This is the legacy bulk method. Stats are now automatically created
-        via signal handler when assignments are created, regardless of official status.
+        via signal handler when assignments are created.
         This method is kept for backward compatibility and bulk regeneration.
         """
         # Clean up old stats before creating new ones
@@ -161,8 +91,6 @@ class Schedule(models.Model):
             for stat in AssignmentStats.objects.filter(
                 user__in=relevant_users,
                 task__in=relevant_tasks,
-                # Only consider stats that are associated with official schedules
-                schedule__is_official=True,
             )
             .order_by("user_id", "task_id", "-created_at")
             .distinct("user_id", "task_id")
@@ -207,18 +135,16 @@ class Schedule(models.Model):
                         # Always reuse the latest stat if it exists
                         stats_to_update.append(latest_stat)
                     else:
-                        # Only create new stat if we have no existing stats AND this is an official schedule
-                        if self.is_official:
-                            stats_to_create.append(
-                                AssignmentStats(
-                                    user=user,
-                                    task=task,
-                                    ideal_average=0,  # Will be calculated below
-                                    actual_average=0,  # Will be calculated below
-                                    assignment_delta=0,  # Will be calculated below
-                                )
+                        stats_to_create.append(
+                            AssignmentStats(
+                                user=user,
+                                task=task,
+                                ideal_average=0,  # Will be calculated below
+                                actual_average=0,  # Will be calculated below
+                                assignment_delta=0,  # Will be calculated below
                             )
-                            created_from_no_existing += 1
+                        )
+                        created_from_no_existing += 1
 
         # Bulk create new stats
         if stats_to_create:
@@ -689,7 +615,7 @@ class AssignmentStats(models.Model):
 def update_assignment_stats(sender, instance, created, **kwargs):
     """
     Update AssignmentStats whenever an assignment is created or updated.
-    This ensures stats are always up-to-date regardless of schedule official status.
+    This keeps the snapshot for this user, task, and schedule current.
 
     AssignmentStats are snapshots tied to a specific schedule, so we only update
     the stat for this specific user/task/schedule combination.

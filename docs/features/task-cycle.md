@@ -8,7 +8,7 @@ Today, two active elders on Sunday 10:30 announcements already get that pattern 
 
 `TaskCycleMember(task, user, order)`. Inline on Task. Empty means current behavior (anyone with `p > 0` may take the task; consecutive-week still applies).
 
-Two or more members: only those people get the task, even if someone else has `p > 0`. Consecutive occurrences of that task, including the last hole of the previous month (calendar Assignments, or `base_schedule` until that is removed), follow the list:
+Two or more members: only those people get the task, even if someone else has `p > 0`. Consecutive occurrences of that task, including the last hole of the previous month (calendar Assignments), follow the list:
 
 ```
 x[member i on t_j]  ≤  x[member i+1 on t_{j+1}]

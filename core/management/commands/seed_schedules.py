@@ -60,7 +60,6 @@ class Command(SeedCommand):
         # Get all year/months between min and max date
         cur = min_date
         cur_datetime = datetime.combine(cur, datetime.min.time())
-        base_schedule = None
 
         while cur < max_date:
             d = {
@@ -70,9 +69,7 @@ class Command(SeedCommand):
                 "defaults": {
                     "created_at": pytz.utc.localize(cur_datetime - timedelta(days=15)),
                     "updated_at": pytz.utc.localize(cur_datetime - timedelta(days=15)),
-                    "is_official": True,
                 },
-                "base_schedule": base_schedule,
             }
 
             schedule, created = Schedule.objects.get_or_create(**d)
@@ -82,7 +79,6 @@ class Command(SeedCommand):
                         f"{schedule.user} created schedule {schedule.name} for {schedule.date}"
                     )
                 )
-            base_schedule = schedule
             cur = cur.replace(
                 day=1,
                 month=(cur.month % 12) + 1,

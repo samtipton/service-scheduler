@@ -1,29 +1,9 @@
 # Drop `base_schedule` and `is_official`
 
-Git-style parent schedules and an official/draft flag. Fairness already reads Assignment dates. These two fields are leftover from an older “selected month” model.
+Done. `schedules.0009_drop_base_schedule_and_is_official` removes both columns. History is Assignment rows. FairJobs still ignores AssignmentStats.
 
-## What they do today
+Generate locks assignments whose date falls in the seven days before the month being solved, in that schedule's group. Those rows are `x == 1`, so consecutive-week and `rotation_group` still see the previous Sunday. The schedule being solved is excluded. Two rows for the same day and task: the later schedule `created_at` wins, then the higher assignment id. An assignment older than that week is history for fairness and is not locked.
 
-`Schedule.base_schedule` is an optional FK to another schedule. The create-month dialog has a “Base Schedule” dropdown. Generate loads that parent’s Assignment rows into the ILP as locked variables (`x == 1`) so consecutive-week and `rotation_group` can see the previous Sunday (and the last week of the previous month). Year-compare chains months with the same FK. Seed walks the parent pointer. The month UI falls back to the parent’s AssignmentStats when the new month has no rows yet.
+The create-month dialog has no Base Schedule picker. Admin has no official flag. A new month does not borrow another schedule's AssignmentStats. Seed no longer chains a parent pointer.
 
-`Schedule.is_official` is unused for FairJobs and Catch-up share. History is Assignment rows. The flag still appears in admin, seed (`True` on generated months), `Schedule.__str__` (“Selected” / “Draft”), `select_as_official()`, `get_latest_selected()`, and `generate_assignment_stats()` (only reuse stats from official schedules). `create_from_base()` defaults the parent to `get_latest_selected()` when none is posted; the create view only sets a parent if the form sent one.
-
-If a month is created with no parent, Generate cannot see last month’s last announcements. Consecutive-week’s first pair is then two Sundays *inside* this month, and the handoff at the month line is guesswork.
-
-## Replacement
-
-Look up Assignment rows by calendar date, not by a parent Schedule.
-
-When generating June, load assignments whose `assigned_at` falls in the last week of May (the same window consecutive-week already uses: from `month_start − 7 days`). Lock those as `x == 1`, the same way base rows are locked today. Several schedules for May are fine: use the assignments that exist. No unique `(schedule, task, assigned_at)` yet; if two rows claim the same hole, pick a deterministic one (latest `id` or latest schedule `created_at`) and document it.
-
-Create-month drops the Base Schedule dropdown. `base_schedule` and `is_official` columns go away. AssignmentStats regen stops filtering on official. FairJobs still ignores AssignmentStats.
-
-Year-compare and tests that pass `base_schedule=` switch to the calendar lookback (create May, then June; June’s solve sees May’s assignments by date).
-
-## Out of scope
-
-Charts. Unique assignment keys. Deleting extra schedules for the same month (still allowed). TaskCycle.
-
-## Done when
-
-Generate on a month with no `base_schedule` still respects last month’s last Sunday for consecutive-week and `rotation_group`. The create dialog has no parent picker. Admin has no official flag. `python manage.py test` passes without those fields.
+`schedules/fixtures/compare/live.sql` is a raw dump from before this drop, and it also has no `group_id`. Regenerate it with `dump_compare_db` before `compare_objectives --dump`. The default test suite does not load that file.

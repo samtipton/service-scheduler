@@ -234,7 +234,7 @@ class FairJobsObjective:
             jobs in week A + jobs in week B  ≤  1 + spill
 
         spill is 0 when they take at most one of those holes. Each extra job
-        is one spill. Previous-month holes in x (base_schedule) count, so a
+        is one spill. Previous-month holes in the lookback window count, so a
         locked Wednesday song leader penalizes the next Sunday.
         """
         pairs = adjacent_rotation_week_pairs({dt for dt, _ in x})

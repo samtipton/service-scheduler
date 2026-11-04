@@ -10,8 +10,8 @@ Roster: a tiny Python world (load_compare_world), or --dump to load live.sql
 (anonymized users, tasks, prefs, last year of assignments).
 
 Uses a throwaway test database (see the management command). History is
-Assignment rows: month n is in the 12-month window for month n+1.
-is_official is unused.
+Assignment rows: month n is in the 12-month window for month n+1. The next
+month's solve locks the previous month's last week by date.
 
 Both objectives are scored on the same ruler, even Catch-up share:
 
@@ -126,14 +126,12 @@ def generate_months(
     objective = get_objective(objective) if isinstance(objective, str) else objective
     schedules = []
     infeasible = 0
-    prev = None
     for i in range(n):
         month_date = add_months(start.year, start.month, i)
         schedule = Schedule.objects.create(
             name=f"{name_prefix}-{month_date.year}-{month_date.month:02d}",
             date=month_date,
             user=creator,
-            base_schedule=prev,
         )
         services = list(
             Service.objects.prefetch_related("tasks", "tasks__excludes").all()
@@ -145,7 +143,6 @@ def generate_months(
         else:
             _persist(schedule, assignment_map)
         schedules.append(schedule)
-        prev = schedule
         if on_month:
             on_month(i + 1, n)
     return schedules, infeasible

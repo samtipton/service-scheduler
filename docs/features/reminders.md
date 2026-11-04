@@ -67,7 +67,7 @@ What action will "lock in" the current schedule and create the scheduled tasks?
 
 **Answer.** Nothing is armed. Turning a channel on is the only switch. While email or SMS reminders are enabled, the command reads the most recently created schedule for the current month, and the most recently created schedule for the next month. "Most recent" is greatest `created_at` among schedules whose `date` falls in that month. Grid edits do not move `created_at`, so typing in an older schedule does not make it current. Creating a newer schedule for that month does, including an empty one.
 
-There is no Group yet (`docs/features/accounts.md`). Until `Schedule.group` exists, that query is the one congregation. When the FK exists, filter to the schedule's group. `is_official` stays unused.
+The source schedule is the latest `created_at` for that group's month. There is no official flag.
 
 The command does not copy assignments and does not create one cron job per person. A grid edit on the current schedule before the send changes the message. A successful send writes `ReminderDelivery` and is not repeated for that person, service date, and channel, even if a newer schedule is created later. A disabled channel sends nothing.
 

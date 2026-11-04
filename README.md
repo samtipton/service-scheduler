@@ -100,7 +100,6 @@ erDiagram
     Task ||--o{ TaskRequires : requires
     Schedule ||--o{ Assignment : contains
     Schedule }o--o{ AssignmentStats : snapshots
-    Schedule }o--o| Schedule : base_schedule
 
     User {
         email string UK
@@ -135,7 +134,6 @@ erDiagram
     }
     Schedule {
         date date "month"
-        is_official bool "TO REMOVE unused"
     }
     Assignment {
         assigned_at datetime "should be date"
@@ -153,7 +151,7 @@ erDiagram
 - **Task** — role on a service. Symmetric `excludes` (cannot hold both in the same week); each task also excludes itself on save. `rotation_group` is a shared label for adjacent-week FairJobs rotation. Blank means no family. Migrate `0005` sets `song` (first/Sunday/Wednesday song leader), `prayer` (first/Sunday/Wednesday opening and closing), `lords_supper` (table lead/aid bread and cup). `id` stays a globally unique code (`song_leader`, `lesson`). A second group's copy needs a different id.
 - **TaskPreference** — `0` ineligible, `(0,1)` below baseline, `1` baseline, `>1` want more. `group` follows the task.
 - **TaskRequires** — when this person is assigned `task`, also assign `requires` the same week. Skips that pair’s exclusion for them only. Directional. They need `p > 0` on both. No group column. The solver keeps a row when that person is on the schedule's roster and both tasks are on the services in this solve.
-- **Schedule** — one month. Optional `base_schedule` (previous month, git-style parent). `is_official` is unused; history is Assignment rows. `group` is required.
+- **Schedule** — one month. History is Assignment rows. There is no parent schedule and no official flag. Generate locks this group's assignments from the seven days before the month; a duplicate hole keeps the later schedule `created_at`, then the higher assignment id. `group` is required.
 - **Assignment** — person + task + datetime on a schedule. Source of truth for history and fairness. No unique `(schedule, task, assigned_at)`. `group` follows the schedule. `bulk_create` must set `group_id` because it does not call `save()`.
 - **AssignmentStats** — derived snapshot (`ideal_average`, `actual_average`, `assignment_delta`), M2M to schedules. Recomputable from Assignment + preference. Lifetime share. FairJobs does not read it.
 
@@ -164,4 +162,4 @@ Messaging (`messaging` app, routes under `/messages/`):
 - **EmailTemplate** — reusable plain-text message. `name` unique. `subject` one line, max 200. `body` text. `created_by` → User, `PROTECT`. `created_at`, `updated_at`.
 - **SentEmail** — one successful send. `schedule` → Schedule, `PROTECT`. `template` → EmailTemplate, null if the template is deleted. `subject` and `body` are the rendered text as sent. `sent_at`, `sent_by` → User, `PROTECT`. `recipients` is a text snapshot of the addresses on that request. New tables, no backfill.
 
-Planned: charts, reminders, TaskCycle, drop `base_schedule` / `is_official` — `docs/features/`. `schedules/fixtures/compare/live.sql` is a raw dump and does not include `group_id`. Regenerate it with `dump_compare_db` before `compare_objectives --dump`. The default test suite does not load that file.
+Planned: charts, reminders, TaskCycle — `docs/features/`. `schedules/fixtures/compare/live.sql` is a raw dump from before groups and before `base_schedule` was dropped. Regenerate it with `dump_compare_db` before `compare_objectives --dump`. The default test suite does not load that file.

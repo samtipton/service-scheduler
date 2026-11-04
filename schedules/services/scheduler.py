@@ -115,7 +115,7 @@ class Scheduler:
         self.assignment_counts, self.task_assignment_totals = (
             self._load_assignment_counts()
         )
-        self._load_base_assignments(schedule)
+        self._load_boundary_assignments(schedule)
 
     def _load_preferences(self):
         prefs: defaultdict[int, dict[str, TaskPreference]] = defaultdict(dict)
@@ -153,18 +153,29 @@ class Scheduler:
             totals[row["task_id"]] += row["n"]
         return counts, totals
 
-    def _load_base_assignments(self, schedule: Schedule):
-        self.base_date_tasks = []
-        self.base_assignments_dict = {}
-        if not schedule.base_schedule_id:
-            return
-        for assignment in schedule.base_schedule.assignments.all().select_related(
-            "user", "task"
-        ):
+    def _load_boundary_assignments(self, schedule: Schedule):
+        """Lock the previous week's holes so the month line stays visible.
+
+        The window is the seven days before this month, in this schedule's
+        group. Two rows for the same day and task: the later schedule
+        created_at wins, then the higher assignment id.
+        """
+        self.boundary_assignments = {}
+        month_start = date(self.year, self.month, 1)
+        window_start = month_start - timedelta(days=7)
+        rows = Assignment.objects.filter(
+            assigned_at__date__gte=window_start,
+            assigned_at__date__lt=month_start,
+        ).select_related("user", "task", "schedule")
+        if schedule.group_id:
+            rows = rows.filter(group=schedule.group)
+        if schedule.pk:
+            rows = rows.exclude(schedule_id=schedule.pk)
+        for assignment in rows.order_by("schedule__created_at", "id"):
             date_str = assignment.assigned_at.strftime("%Y-%m-%d")
             date_task = DateTask(date_str, assignment.task)
-            self.base_assignments_dict[date_task] = assignment.user
-            self.base_date_tasks.append((date_task, assignment.user))
+            self.boundary_assignments[date_task] = assignment.user
+        self.boundary_date_tasks = list(self.boundary_assignments.items())
 
     def _build_variables(self):
         self.assignment_vars = list(
@@ -176,7 +187,7 @@ class Scheduler:
                         for date_task in self.date_tasks
                         if self.is_eligible(user, date_task)
                     ),
-                    self.base_date_tasks,
+                    self.boundary_date_tasks,
                 )
             )
         )
@@ -246,8 +257,8 @@ class Scheduler:
 
     def constrain_past_assignments(self):
         """Constrain all past assignments variables to 1"""
-        for base_date_task, user in self.base_assignments_dict.items():
-            self.prob += self.x[(base_date_task, user)] == 1
+        for boundary_date_task, user in self.boundary_assignments.items():
+            self.prob += self.x[(boundary_date_task, user)] == 1
 
     def constrain_one_person_per_task(self):
         """Constrain each task to have only one person assigned to it"""

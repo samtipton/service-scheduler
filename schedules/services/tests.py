@@ -77,12 +77,11 @@ class SchedulerFixtureMixin:
         )
         return self.service, self.task
 
-    def _schedule(self, year, month, base=None):
+    def _schedule(self, year, month):
         return Schedule.objects.create(
             name=f"test-{year}-{month}",
             date=date(year, month, 1),
             user=self.creator,
-            base_schedule=base,
         )
 
     def _pref(self, user, task, value=1.0):
@@ -575,7 +574,7 @@ class RotationGroupTests(SchedulerFixtureMixin, TestCase):
             user=alice,
             assigned_at=timezone.make_aware(datetime(2026, 1, 28)),
         )
-        feb = self._schedule(2026, 2, base=jan)
+        feb = self._schedule(2026, 2)
         result, assignments = Scheduler(
             feb,
             self._services(),
@@ -586,6 +585,38 @@ class RotationGroupTests(SchedulerFixtureMixin, TestCase):
         self.assertNotEqual(assignments.get("2026-2-1-rg_sun_song"), alice_name)
         self.assertNotEqual(assignments.get("2026-2-4-rg_wed_song"), alice_name)
         self.assertEqual(self._adjacent_hits(assignments), 0)
+
+    def test_boundary_keeps_the_later_schedule_for_a_duplicate_hole(self):
+        self._family()
+        alice, bob, *_ = self._people_on_family(4)
+        earlier = self._schedule(2026, 1)
+        later = self._schedule(2026, 1)
+        Schedule.objects.filter(pk=earlier.pk).update(
+            created_at=timezone.make_aware(datetime(2026, 1, 1))
+        )
+        Schedule.objects.filter(pk=later.pk).update(
+            created_at=timezone.make_aware(datetime(2026, 1, 2))
+        )
+        when = timezone.make_aware(datetime(2026, 1, 28))
+        Assignment.objects.create(
+            schedule=earlier, task=self.wed_task, user=alice, assigned_at=when
+        )
+        Assignment.objects.create(
+            schedule=later, task=self.wed_task, user=bob, assigned_at=when
+        )
+        Assignment.objects.create(
+            schedule=later,
+            task=self.wed_task,
+            user=alice,
+            assigned_at=timezone.make_aware(datetime(2026, 1, 7)),
+        )
+        feb = self._schedule(2026, 2)
+        scheduler = Scheduler(feb, self._services())
+        locked = {
+            str(date_task): user
+            for date_task, user in scheduler.boundary_assignments.items()
+        }
+        self.assertEqual(locked, {"2026-01-28-rg_wed_song": bob})
 
     def test_known_ids_get_family_labels(self):
         self.creator = self._user("creator", "Test", "Creator")

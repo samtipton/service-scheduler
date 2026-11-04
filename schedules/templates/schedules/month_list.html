@@ -62,15 +62,6 @@
         <input type="date" id="date" name="date" required>
       </div>
       <div>
-        <label for="base_schedule">Base Schedule</label>
-        <select id="base_schedule" name="base_schedule">
-          <option value="">None</option>
-          {% for schedule in schedules %}
-            <option value="{{ schedule.id }}">{{ schedule.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
         <button type="button" onclick="document.getElementById('newScheduleDialog').close()">Cancel</button>
         <button type="submit">Create Schedule</button>
       </div>

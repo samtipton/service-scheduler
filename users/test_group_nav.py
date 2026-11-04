@@ -42,6 +42,7 @@ class GroupNavTests(TestCase):
         page = self.client.get("/schedules/")
         self.assertContains(page, "Second Church")
         self.assertContains(page, "Create New Schedule")
+        self.assertNotContains(page, "Base Schedule")
         self.assertNotContains(page, "Create a group to create a schedule.")
 
     def test_schedule_list_follows_the_selected_group(self):

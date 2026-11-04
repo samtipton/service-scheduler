@@ -3,7 +3,7 @@
 Writes users, services, tasks, prefs, schedules, and the last year of
 assignments to live.sql. Names, emails, and passwords are replaced so the
 file is safe to commit. Load it into the throwaway test database. History
-is Assignment rows; is_official is unused.
+is Assignment rows.
 """
 
 from datetime import date
