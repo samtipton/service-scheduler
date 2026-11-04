@@ -75,6 +75,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "schedules.middleware.LoginRequiredMiddleware",
+    "config.middleware.FriendlyNotFoundMiddleware",
 ]
 
 if DEBUG and not TESTING:  # Only enable the toolbar in debug mode

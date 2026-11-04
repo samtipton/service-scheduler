@@ -42,6 +42,10 @@
 .email-main {
     flex: 1;
     max-width: 40rem;
+    background: #fff;
+    border: 1px solid #e2e7ee;
+    border-radius: 12px;
+    padding: 1rem 1.15rem 1.25rem;
 }
 
 .compose,

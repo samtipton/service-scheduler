@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Page not found{% endblock %}
+{% block page_heading %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .not-found {
+        max-width: 34rem;
+        margin: 1.5rem auto 0;
+    }
+    .not-found p {
+        margin: 0 0 0.9rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="not-found">
+    <p>That page is not available.</p>
+    {% if user.is_authenticated %}
+    <p><a href="{% url 'schedules:index' %}">Back to schedules</a></p>
+    {% else %}
+    <p><a href="{% url 'login' %}">Log in</a></p>
+    {% endif %}
+</div>
+{% endblock %}

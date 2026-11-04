@@ -1,0 +1,80 @@
+body.month-grid {
+    font-family: Arial, sans-serif;
+    background: #fff;
+}
+
+body.month-grid .site-header,
+body.month-grid .site-header * {
+    font-family: Arial, sans-serif;
+}
+
+.schedule-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.65rem;
+    padding: 0.7rem 1rem;
+    background: #fff;
+    border-bottom: 1px solid #e2e7ee;
+}
+
+.schedule-toolbar form {
+    display: inline;
+    margin: 0;
+}
+
+.schedule-toolbar .objective-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #5d6b7c;
+}
+
+.schedule-toolbar select,
+.schedule-toolbar button {
+    font: inherit;
+    font-size: 0.88rem;
+    border-radius: 8px;
+    border: 1px solid #d5dde6;
+    background: #fff;
+    color: #1b2430;
+    padding: 0.35rem 0.65rem;
+    cursor: pointer;
+}
+
+.schedule-toolbar button.toolbar-primary {
+    background: #1f4e79;
+    border-color: #1f4e79;
+    color: #fff;
+    font-weight: 600;
+}
+
+.schedule-toolbar button.toolbar-danger {
+    color: #9f2d2d;
+    border-color: #e7c7c7;
+    background: #fff;
+}
+
+.schedule-sheet {
+    padding: 0.85rem 1rem 1.5rem;
+    overflow-x: auto;
+}
+
+@media print {
+    .site-header,
+    .schedule-toolbar,
+    #newGroupDialog,
+    #send-schedule-dialog,
+    .toast,
+    .assignment-map {
+        display: none !important;
+    }
+
+    body.month-grid {
+        background: #fff;
+    }
+
+    body.month-grid .content-wide,
+    .schedule-sheet {
+        padding: 0;
+    }
+}

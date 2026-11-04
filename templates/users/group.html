@@ -1,15 +1,81 @@
 {% extends "base.html" %}
 
 {% block title %}Groups{% endblock %}
-{% block page_title %}Groups{% endblock %}
 
 {% block extra_css %}
 <style>
+    .roster-add {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1rem;
+        align-items: end;
+        background: #fff;
+        border: 1px solid #e2e7ee;
+        border-radius: 12px;
+        padding: 0.9rem 1rem;
+        margin: 0 0 0.75rem;
+    }
+    .roster-add label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        font-weight: 600;
+        font-size: 0.88rem;
+    }
+    .roster-add input,
+    .roster-add select,
+    .roster select {
+        font: inherit;
+        padding: 0.35rem 0.45rem;
+        border: 1px solid #cfd6df;
+        border-radius: 8px;
+        background: #fff;
+    }
+    .roster-add button,
+    .roster button[type="submit"] {
+        font: inherit;
+        border: 1px solid #d5dde6;
+        background: #fff;
+        border-radius: 8px;
+        padding: 0.4rem 0.7rem;
+        cursor: pointer;
+    }
+    .roster-wrap {
+        background: #fff;
+        border: 1px solid #e2e7ee;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .roster {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .roster th,
+    .roster td {
+        text-align: left;
+        padding: 0.6rem 0.8rem;
+        border-bottom: 1px solid #e2e7ee;
+        vertical-align: middle;
+    }
+    .roster th {
+        font-size: 0.78rem;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #5d6b7c;
+        background: #f7f9fb;
+    }
+    .roster tr:last-child td {
+        border-bottom: none;
+    }
+    .roster-note {
+        color: #5d6b7c;
+        font-size: 0.92rem;
+    }
     .delete-group {
-        background: #b91c1c;
+        background: #9f2d2d;
         color: #fff;
         border: none;
-        border-radius: 0.4rem;
+        border-radius: 8px;
         padding: 0.45rem 0.8rem;
         font: inherit;
         cursor: pointer;
@@ -32,7 +98,7 @@
 {% else %}
 <h2>{{ group.name }}</h2>
 {% if can_manage %}
-<form method="post" action="{% url 'group_add' %}">
+<form method="post" action="{% url 'group_add' %}" class="roster-add">
     {% csrf_token %}
     <label>Email <input type="email" name="email" required></label>
     <label>Role
@@ -47,9 +113,10 @@
 {% if error %}
 <p role="alert">{{ error }}</p>
 {% endif %}
-<p>Adding an existing login does not send email. A link for someone without a login is not built yet.</p>
+<p class="roster-note">Adding an existing login does not send email. A link for someone without a login is not built yet.</p>
 {% endif %}
-<table>
+<div class="roster-wrap">
+<table class="roster">
     <thead>
         <tr><th>Name</th><th>Email</th><th>Role</th>{% if can_manage %}<th></th>{% endif %}</tr>
     </thead>
@@ -88,6 +155,7 @@
         {% endfor %}
     </tbody>
 </table>
+</div>
 {% if can_manage %}
 <p>
     <button type="button" class="delete-group" onclick="document.getElementById('deleteGroupDialog').showModal()">Delete group</button>

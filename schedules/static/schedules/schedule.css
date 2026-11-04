@@ -1,5 +1,15 @@
 * {
     box-sizing: border-box;
+  }
+
+  body,
+  table,
+  th,
+  td,
+  .header,
+  .banner,
+  .assignment-map,
+  input.assignment-input {
     font-family: "Times New Roman", Times, serif;
   }
   
@@ -85,13 +95,14 @@
     border: 3px dotted #666;
   }
   
-  input[type="text"] {
+  input.assignment-input {
     all: unset;
     border: none;
     width: 100%;
     padding: 0;
     margin: 0;
     cursor: text;
+    font-family: "Times New Roman", Times, serif;
   }
   
   input::placeholder {

@@ -51,11 +51,11 @@ CBC typically a few seconds. Persist is `"YYYY-M-D-task_id" → "Last, First"`.
 
 ## Frontend
 
-Site shell (`templates/base.html`): top bar with the page title, Schedules and Messages links when logged in, and a user menu (name card → Logout; Admin to `/admin/` for superusers). The month grid is its own document and does not use this shell. Its overlay has Send schedule, which posts to `/messages/`.
+Site shell (`templates/base.html`, `core/static/site.css`): top bar with the current group, a section title of Schedules, Messages, or Groups, those same links, a user menu (name card → Change password, Logout; Admin to `/admin/` for superusers), and a home icon button at the left that returns to `/schedules/`. `/schedules/` is a card list. The month grid at `/schedules/<id>/` uses this same shell. Generate, PDF, send, and clear sit in a toolbar under the nav. The printed grid stays in Times. PDF download and mail render `schedules/pdf_month_schedule.html`, which does not extend the shell, so the nav is not in the PDF. Send schedule posts to `/messages/`.
 
 Month grid: Django templates + `schedules/static/schedules/schedule.js`. One table; each hole is `<input class="assignment-input" list="{{ task.id }}">`. Datalist of eligible users by inverted name (`Last, First`), sorted by FairJobs `count_so_far − target` (Catch-up share uses `assignment_delta`). Enter autocompletes the first match. Unknown typed names are skipped on save.
 
-Also: drag-swap, 400ms debounce plus pagehide flush of dirty cells, Generate (skeleton on empty cells), Legal-landscape PDF, per-person count panel, clear. Overlay in `month_schedule.html`. Unauthenticated `/schedules/` and `/messages/` go to `/login/`. Generate, update, clear, and PDF are `csrf_exempt`. Message compose and send use the CSRF token. `LoginRequiredMiddleware` wraps both prefixes.
+Also: drag-swap, 400ms debounce of changed cells, Generate (skeleton on empty cells), Legal-landscape PDF, per-person count panel, clear. Leaving the month grid (home, any other link, logout, group switch, PDF, refresh, or closing the tab) writes every current assignment first. Unknown typed names are still skipped. Unauthenticated `/schedules/` and `/messages/` go to `/login/`. Unknown URLs, and schedules the user cannot open, render `templates/404.html` inside the shell with status 404. Generate, update, clear, and PDF are `csrf_exempt`. Message compose and send use the CSRF token. `LoginRequiredMiddleware` wraps both prefixes.
 
 ## Key files
 

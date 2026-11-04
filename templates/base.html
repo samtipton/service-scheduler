@@ -1,9 +1,11 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Service Scheduler{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'site.css' %}">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -25,6 +27,35 @@
             gap: 1rem;
             margin-left: auto;
         }
+        .home-button,
+        .home-button:visited {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: none;
+            width: 2.25rem;
+            height: 2.25rem;
+            padding: 0;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 0.5rem;
+            color: #212529;
+            text-decoration: none;
+        }
+        .home-button:hover,
+        .home-button:visited:hover {
+            background: #f3f4f6;
+            color: #212529;
+            text-decoration: none;
+        }
+        .home-button svg {
+            width: 1.15rem;
+            height: 1.15rem;
+            display: block;
+        }
+        .page-heading:not(:has(.page-title, .create-schedule)) {
+            display: none;
+        }
         .page-title {
             font-size: 1.5rem;
             font-weight: bold;
@@ -35,6 +66,7 @@
         }
         .user-menu-card {
             list-style: none;
+            display: inline-block;
             cursor: pointer;
             user-select: none;
             background: #fff;
@@ -43,7 +75,9 @@
             padding: 0.4rem 0.75rem;
             font: inherit;
         }
-        .user-menu-card::-webkit-details-marker {
+        .user-menu-card::-webkit-details-marker,
+        .user-menu-card::marker {
+            content: "";
             display: none;
         }
         .user-menu-card::after {
@@ -89,6 +123,7 @@
         .group-menu-card,
         .create-group-button {
             list-style: none;
+            display: inline-block;
             cursor: pointer;
             user-select: none;
             background: #fff;
@@ -97,7 +132,9 @@
             padding: 0.4rem 0.75rem;
             font: inherit;
         }
-        .group-menu-card::-webkit-details-marker {
+        .group-menu-card::-webkit-details-marker,
+        .group-menu-card::marker {
+            content: "";
             display: none;
         }
         .group-menu-card::after {
@@ -156,12 +193,18 @@
             text-decoration: underline;
         }
     </style>
+    {% block extra_head %}{% endblock %}
     {% block extra_css %}{% endblock %}
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
     <header class="site-header">
         <div class="site-toolbar">
             {% if user.is_authenticated %}
+            <a class="home-button" href="{% url 'schedules:index' %}" aria-label="Home">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path fill="currentColor" d="M12 3.2 3 11h2v9h5v-6h4v6h5v-9h2L12 3.2z"/>
+                </svg>
+            </a>
             {% if current_group %}
             <details class="group-menu">
                 <summary class="group-menu-card">{{ current_group.name }}</summary>
@@ -180,12 +223,23 @@
             <button type="button" class="create-group-button" onclick="document.getElementById('newGroupDialog').showModal()">Create a group</button>
             {% endif %}
             {% endif %}
-            <h1 class="page-title">{% block page_title %}Service Scheduler{% endblock %}</h1>
+            <div class="page-heading">
+                {% block page_heading %}
+                {% if request.resolver_match.namespace == "schedules" %}
+                <h1 class="page-title">Schedules</h1>
+                {% elif request.resolver_match.namespace == "messaging" %}
+                <h1 class="page-title">Messages</h1>
+                {% elif request.resolver_match.url_name == "group_roster" %}
+                <h1 class="page-title">Groups</h1>
+                {% endif %}
+                {% endblock %}
+                {% block title_actions %}{% endblock %}
+            </div>
             {% if user.is_authenticated %}
-            <nav class="site-nav">
-                <a href="{% url 'schedules:index' %}">Schedules</a>
-                <a href="{% url 'messaging:new_email' %}">Messages</a>
-                <a href="{% url 'group_roster' %}">Groups</a>
+            <nav class="site-nav" aria-label="Primary">
+                <a href="{% url 'schedules:index' %}" {% if request.resolver_match.namespace == 'schedules' %}class="is-active" aria-current="page"{% endif %}>Schedules</a>
+                <a href="{% url 'messaging:new_email' %}" {% if request.resolver_match.namespace == 'messaging' %}class="is-active" aria-current="page"{% endif %}>Messages</a>
+                <a href="{% url 'group_roster' %}" {% if request.resolver_match.url_name == 'group_roster' %}class="is-active" aria-current="page"{% endif %}>Groups</a>
             </nav>
             <details class="user-menu">
                 <summary class="user-menu-card">{{ user.first_name }} {{ user.last_name }}</summary>
@@ -205,18 +259,19 @@
             {% endif %}
         </div>
     </header>
-    
-    <main class="content">
+    {% block header_extra %}{% endblock %}
+
+    <main class="content{% block content_class %}{% endblock %}">
         {% block content %}{% endblock %}
     </main>
 
     <footer>
         {% block footer %}{% endblock %}
     </footer>
-    
+
     <script>
         document.addEventListener("click", function (event) {
-            document.querySelectorAll(".user-menu[open], .group-menu[open]").forEach(function (menu) {
+            document.querySelectorAll(".user-menu[open], .group-menu[open], .schedule-menu[open]").forEach(function (menu) {
                 if (!menu.contains(event.target)) {
                     menu.removeAttribute("open");
                 }

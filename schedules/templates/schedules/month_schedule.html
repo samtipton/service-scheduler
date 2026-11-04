@@ -1,74 +1,78 @@
+{% extends "base.html" %}
 {% load schedule_tags %}
 {% load static %}
 
 {% comment %}
-This template expects the following context variables:
-- calendar: A list of weeks, where each week is a list of days
-- service_days: A set of days that have services
-- num_services: The maximum number of services needed
-- TODO complete list of context variables
+Screen document for /schedules/<id>/. The PDF is pdf_month_schedule.html.
+That template does not extend this shell, so the top nav stays out of the PDF.
 {% endcomment %}
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% block title %}{{ schedule.name }}{% endblock %}
+{% block body_class %}month-grid{% endblock %}
+{% block content_class %} content-wide{% endblock %}
+
+{% block extra_head %}
     <meta name="csrf-token" content="{{ csrf_token }}">
-    <meta name="pdfkit-page-size" content="Legal"/>
-    <meta name="pdfkit-orientation" content="Landscape"/>
     <meta http-equiv="Cache-control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"
             integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
             crossorigin="anonymous">
     </script>
-    <title>{{ month_name }} {{ year }} Schedule</title>
+{% endblock %}
+
+{% block extra_css %}
     <link rel="stylesheet" href="{% static 'schedules/schedule.css' %}">
+    <link rel="stylesheet" href="{% static 'schedules/month.css' %}">
     <link rel="stylesheet" href="{% static 'messaging/messaging.css' %}">
-    <script src="{% static 'schedules/schedule.js' %}"></script>
-    <script src="{% static 'messaging/compose.js' %}"></script>
-</head>
-<body>
-    <div class="overlay mouse-reveal">
+{% endblock %}
+
+{% block header_extra %}
+    <div class="schedule-toolbar">
         <label for="objective-select" class="objective-label">Objective</label>
         <select id="objective-select">
             {% for value, label in objective_choices %}
             <option value="{{ value }}" {% if value == objective_name %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
         </select>
-        <button id="generate-assignments">Generate Assignments</button>
-        <button id="download-pdf">Download PDF</button>
+        <button id="generate-assignments" class="toolbar-primary" type="button">Generate Assignments</button>
+        <button id="download-pdf" type="button">Download PDF</button>
         <button type="button" id="send-schedule" data-compose-url="{% url 'messaging:compose' %}?schedule={{ schedule.id }}">Send schedule</button>
-        <button id="toggle-assignment-count">Toggle Assignment Counts</button>
-        <button id="clear-schedule">Clear Assignments</button>
+        <button id="toggle-assignment-count" type="button">Toggle Assignment Counts</button>
+        <button id="clear-schedule" class="toolbar-danger" type="button">Clear Assignments</button>
         {% if schedule|can_be_deleted_by:user %}
-        <form method="post" action="{% url 'schedules:delete_schedule' id=schedule.id %}" style="display:inline">
+        <form method="post" action="{% url 'schedules:delete_schedule' id=schedule.id %}">
             {% csrf_token %}
-            <button type="submit" onclick="return confirm('Delete this schedule? Its assignments will be removed.');">Delete Schedule</button>
+            <button type="submit" class="toolbar-danger" onclick="return confirm('Delete this schedule? Its assignments will be removed.');">Delete Schedule</button>
         </form>
         {% endif %}
     </div>
-    <div class="header">
-        <h1>{{ month_name }}</h1>
+{% endblock %}
+
+{% block content %}
+    <div class="schedule-sheet">
+        <div class="header">
+            <h1>{{ month_name }}</h1>
+        </div>
+        <table>
+            {% include "schedules/month_schedule_header.html" with service=services.0 %}
+            {% include "schedules/month_schedule_service.html" with service=services.0 %}
+            {% include "schedules/month_schedule_banner.html" with service=services.1 %}
+            {% include "schedules/month_schedule_service.html" with service=services.1 %}
+            {% include "schedules/month_schedule_header.html" with service=services.2 %}
+            {% include "schedules/month_schedule_service.html" with service=services.2 %}
+            {% include "schedules/month_schedule_service.html" with service=services.3 %}
+        </table>
     </div>
-{%block content%}
-<table>
-    {% include "schedules/month_schedule_header.html" with service=services.0 %}
-    {% include "schedules/month_schedule_service.html" with service=services.0 %}
-    {% include "schedules/month_schedule_banner.html" with service=services.1 %}
-    {% include "schedules/month_schedule_service.html" with service=services.1 %}
-    {% include "schedules/month_schedule_header.html" with service=services.2 %}
-    {% include "schedules/month_schedule_service.html" with service=services.2 %}
-    {% include "schedules/month_schedule_service.html" with service=services.3 %}
-</table>
 
-<dialog id="send-schedule-dialog"></dialog>
-<div class="toast" id="toast"></div>
-<div class="assignment-map hidden"></div>
+    <dialog id="send-schedule-dialog"></dialog>
+    <div class="toast" id="toast"></div>
+    <div class="assignment-map hidden"></div>
 
-{% include "schedules/month_schedule_datalists.html" %}
+    {% include "schedules/month_schedule_datalists.html" %}
+{% endblock %}
 
-{%endblock%}
-</body>
-</html>
+{% block extra_js %}
+    <script src="{% static 'schedules/schedule.js' %}"></script>
+    <script src="{% static 'messaging/compose.js' %}"></script>
+{% endblock %}

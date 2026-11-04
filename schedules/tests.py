@@ -5,7 +5,7 @@ from decimal import Decimal
 from django.db import IntegrityError
 from django.db.models import Count
 from django.forms import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from core import models
 from schedules.models import (
@@ -720,7 +720,7 @@ class DeleteScheduleViewTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertTrue(Schedule.objects.filter(id=self.schedule.id).exists())
         list_page = self.client.get("/schedules/")
-        self.assertNotContains(list_page, "[delete]")
+        self.assertNotContains(list_page, ">Delete<")
 
     def test_staff_can_delete_someone_elses_schedule(self):
         staff = User.objects.create_user(
@@ -831,7 +831,7 @@ class RenameScheduleViewTests(TestCase):
         self.schedule.refresh_from_db()
         self.assertEqual(self.schedule.name, "Throwaway")
         list_page = self.client.get("/schedules/")
-        self.assertNotContains(list_page, "[rename]")
+        self.assertNotContains(list_page, ">Rename<")
 
     def test_staff_can_rename_someone_elses_schedule(self):
         staff = User.objects.create_user(
@@ -851,7 +851,7 @@ class RenameScheduleViewTests(TestCase):
 
     def test_list_shows_rename_for_owner(self):
         list_page = self.client.get("/schedules/")
-        self.assertContains(list_page, "[rename]")
+        self.assertContains(list_page, ">Rename<")
         self.assertContains(list_page, f"/schedules/{self.schedule.id}/rename")
 
 
@@ -870,8 +870,14 @@ class SiteNavTests(TestCase):
         self.assertContains(response, "Nav User")
         self.assertContains(response, 'action="/logout/"')
         self.assertContains(response, "Logout")
+        self.assertContains(response, 'class="home-button"')
+        self.assertContains(response, 'aria-label="Home"')
+        self.assertContains(response, 'href="/schedules/"')
+        self.assertContains(response, 'class="page-title">Schedules')
         self.assertNotContains(response, "Admin")
         self.assertNotContains(response, 'href="/admin/"')
+        password = self.client.get("/password_change/")
+        self.assertNotContains(password, 'class="page-title"')
 
     def test_superuser_sees_admin_link(self):
         self.user.is_superuser = True
@@ -887,6 +893,66 @@ class SiteNavTests(TestCase):
         response = self.client.get("/schedules/")
         self.assertNotContains(response, "Admin")
         self.assertNotContains(response, 'href="/admin/"')
+
+
+class ScheduleShellTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="test+shell@example.com",
+            first_name="Shell",
+            last_name="User",
+            password="x",
+        )
+        self.schedule = Schedule.objects.create(
+            name="June Card",
+            description="Second Sunday notes",
+            date=datetime.date(2026, 6, 1),
+            user=self.user,
+        )
+        Membership.objects.create(
+            user=self.user, group=self.schedule.group, role=Membership.SCHEDULER
+        )
+        for name in ("Sunday AM", "Sunday Class", "Sunday PM", "Wednesday"):
+            Service.objects.create(name=name, day_of_week=0, start_time=time(9, 0))
+        self.client.force_login(self.user)
+
+    def test_schedule_list_is_cards(self):
+        response = self.client.get("/schedules/")
+        self.assertContains(response, "schedule-card")
+        self.assertContains(response, "June Card")
+        self.assertContains(response, "June 2026")
+        self.assertContains(response, "Second Sunday notes")
+        self.assertNotContains(response, "<ul")
+        self.assertContains(response, ">Rename<")
+
+    def test_month_page_uses_the_site_shell(self):
+        response = self.client.get(f"/schedules/{self.schedule.id}/")
+        self.assertContains(response, 'class="site-nav"')
+        self.assertContains(response, 'class="site-header"')
+        self.assertContains(response, "Messages")
+        self.assertContains(response, "Groups")
+        self.assertContains(response, 'class="schedule-toolbar"')
+        self.assertContains(response, "Generate Assignments")
+        self.assertContains(response, "June Card")
+        self.assertContains(response, 'class="page-title">Schedules')
+        self.assertNotContains(response, 'class="page-title">June Card')
+        self.assertContains(response, 'aria-current="page"')
+
+    def test_pdf_html_has_no_site_shell(self):
+        from django.template.loader import render_to_string
+
+        from schedules.services.pdf import build_pdf_context
+
+        html = render_to_string(
+            "schedules/pdf_month_schedule.html", build_pdf_context(self.schedule)
+        )
+        self.assertNotIn("site-header", html)
+        self.assertNotIn("site-nav", html)
+        self.assertNotIn("home-button", html)
+        self.assertNotIn("schedule-toolbar", html)
+        self.assertNotIn("Generate Assignments", html)
+        self.assertIn("<table>", html)
+        self.assertIn("June", html)
 
 
 class UpdateScheduleTests(TestCase):
@@ -968,4 +1034,42 @@ class UpdateScheduleTests(TestCase):
         )
         self.assertEqual(
             Assignment.objects.get(schedule=self.schedule).user, self.jay
+        )
+
+
+class NotFoundPageTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="test+missing@example.com",
+            first_name="Missing",
+            last_name="User",
+            password="x",
+        )
+
+    def test_unknown_url_uses_the_shell_for_a_guest(self):
+        response = self.client.get("/no-such-page/")
+        self.assertContains(response, "That page is not available.", status_code=404)
+        self.assertContains(response, "<title>Page not found</title>", status_code=404, html=False)
+        self.assertNotContains(response, 'class="page-title"', status_code=404)
+        self.assertContains(response, 'class="site-header"', status_code=404)
+        self.assertContains(response, "Log in", status_code=404)
+        self.assertNotContains(
+            response, "You're seeing this error because", status_code=404
+        )
+
+    @override_settings(DEBUG=True)
+    def test_unknown_url_uses_the_shell_when_debug_is_on(self):
+        response = self.client.get("/no-such-page/")
+        self.assertContains(response, "That page is not available.", status_code=404)
+        self.assertContains(response, 'class="site-header"', status_code=404)
+        self.assertNotContains(response, "URL patterns", status_code=404)
+
+    def test_missing_schedule_uses_the_shell_for_a_member(self):
+        self.client.force_login(self.user)
+        response = self.client.get("/schedules/999999/")
+        self.assertContains(response, "That page is not available.", status_code=404)
+        self.assertContains(response, "Back to schedules", status_code=404)
+        self.assertContains(response, 'class="home-button"', status_code=404)
+        self.assertNotContains(
+            response, "You're seeing this error because", status_code=404
         )

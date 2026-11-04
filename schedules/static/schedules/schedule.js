@@ -89,6 +89,33 @@ document.addEventListener("DOMContentLoaded", (event) => {
             }, {})
     }
 
+    function cellAssignee(input) {
+      if (input === document.activeElement) {
+        return (input.value || input.getAttribute("placeholder") || "").trim();
+      }
+      return (input.value || "").trim();
+    }
+
+    function collectFullSavePayload() {
+      const payload = {};
+      document.querySelectorAll("td.duty-cell").forEach((cell) => {
+        const duty = cell.dataset.duty;
+        const input = cell.querySelector("input.assignment-input");
+        if (!duty || !input) {
+          return;
+        }
+        const value = cellAssignee(input);
+        if (value && isKnownAssignee(input, value)) {
+          payload[duty] = value;
+          return;
+        }
+        if (!value && Object.prototype.hasOwnProperty.call(lastAssignments, duty)) {
+          payload[duty] = null;
+        }
+      });
+      return payload;
+    }
+
     function collectChangedAssignments(options) {
       const skipDuty =
         options && options.includeFocused ? null : focusedDutyKey();
@@ -254,16 +281,33 @@ document.addEventListener("DOMContentLoaded", (event) => {
         window.clearTimeout(saveTimer);
         saveTimer = null;
       }
-      flushSave({ keepalive: true, includeFocused: true });
+      const payload = collectFullSavePayload();
+      if (Object.keys(payload).length === 0) {
+        return;
+      }
+      sendAssignments(payload, { keepalive: true });
+    }
+
+    function sendAssignments(payload, options) {
+      options = options || {};
+      return fetch("update", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken(),
+        },
+        body: JSON.stringify(payload),
+        keepalive: !!options.keepalive,
+      });
     }
 
     async function flushSave(options) {
       options = options || {};
       if (saveInFlight && !options.keepalive) {
         saveQueued = true;
-        return;
+        return false;
       }
-      const payload = collectChangedAssignments({
+      const payload = options.payload || collectChangedAssignments({
         includeFocused: options.includeFocused,
       });
       if (Object.keys(payload).length === 0) {
@@ -271,33 +315,27 @@ document.addEventListener("DOMContentLoaded", (event) => {
           saveQueued = false;
           saveAfterDelay();
         }
-        return;
+        return true;
       }
       saveInFlight = true;
       try {
-        const res = await fetch("update", {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrfToken(),
-          },
-          body: JSON.stringify(payload),
-          keepalive: !!options.keepalive,
-        });
+        const res = await sendAssignments(payload, options);
         if (options.keepalive) {
-          return;
+          return true;
         }
         if (res.status === 204) {
           markAssignmentsSaved(payload);
           showToast("Saved");
           updateAssignedCount();
-        } else {
-          showToast("Save failed");
+          return true;
         }
+        showToast("Save failed");
+        return false;
       } catch (err) {
         if (!options.keepalive) {
           showToast("Save failed");
         }
+        return false;
       } finally {
         saveInFlight = false;
         if (saveQueued && !options.keepalive) {
@@ -305,6 +343,85 @@ document.addEventListener("DOMContentLoaded", (event) => {
           saveAfterDelay();
         }
       }
+    }
+
+    var navigationLocked = false;
+
+    async function persistAllAssignments() {
+      if (saveTimer) {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      const payload = collectFullSavePayload();
+      if (Object.keys(payload).length === 0) {
+        flushedOnLeave = true;
+        return true;
+      }
+      const started = Date.now();
+      while (saveInFlight && Date.now() - started < 8000) {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      }
+      saveQueued = false;
+      if (saveTimer) {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      const ok = await flushSave({ payload: payload });
+      saveQueued = false;
+      if (saveTimer) {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      if (ok) {
+        flushedOnLeave = true;
+      }
+      return !!ok;
+    }
+
+    function goAfterSave(go) {
+      if (navigationLocked) {
+        return;
+      }
+      navigationLocked = true;
+      showToast("Saving...");
+      persistAllAssignments().then(function (ok) {
+        if (!ok) {
+          navigationLocked = false;
+          return;
+        }
+        go();
+      });
+    }
+
+    function linkLeavesPage(link, event) {
+      if (event.defaultPrevented || event.button !== 0) {
+        return false;
+      }
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return false;
+      }
+      if (!link || link.hasAttribute("download")) {
+        return false;
+      }
+      if (link.target && link.target !== "_self") {
+        return false;
+      }
+      let url;
+      try {
+        url = new URL(link.href, window.location.href);
+      } catch (err) {
+        return false;
+      }
+      if (url.origin !== window.location.origin) {
+        return false;
+      }
+      if (
+        url.pathname === window.location.pathname &&
+        url.search === window.location.search
+      ) {
+        return false;
+      }
+      return url;
     }
   
     function toggleAssignmentCountVisibility() {
@@ -504,11 +621,11 @@ document.addEventListener("DOMContentLoaded", (event) => {
       setupInput(input);
     });
   
-    document.getElementById("download-pdf").onclick = async function () {
-      window.location = "pdf";
+    document.getElementById("download-pdf").onclick = function () {
+      goAfterSave(function () {
+        window.location.assign("pdf");
+      });
     };
-  
-    // document.getElementById("download-pdf").onclick = pdf;
 
     document.getElementById("toggle-assignment-count").onclick =
       toggleAssignmentCountVisibility;
@@ -517,8 +634,35 @@ document.addEventListener("DOMContentLoaded", (event) => {
 
     document.getElementById("generate-assignments").onclick = generateAssignments;
 
+    document.addEventListener("click", function (event) {
+      const link = event.target.closest("a[href]");
+      const url = linkLeavesPage(link, event);
+      if (!url) {
+        return;
+      }
+      event.preventDefault();
+      goAfterSave(function () {
+        window.location.assign(url.href);
+      });
+    }, true);
+
+    document.addEventListener("submit", function (event) {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement) || form.matches("[data-compose-form]")) {
+        return;
+      }
+      event.preventDefault();
+      goAfterSave(function () {
+        form.submit();
+      });
+    }, true);
+
     window.addEventListener("pagehide", saveOnLeave);
     window.addEventListener("beforeunload", saveOnLeave);
+    window.addEventListener("pageshow", function () {
+      flushedOnLeave = false;
+      navigationLocked = false;
+    });
 
   
     function setupInputEventListeners(input) {
