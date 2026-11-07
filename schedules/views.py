@@ -27,7 +27,7 @@ from schedules.utils import (
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 
-from schedules.guard import visible_schedule
+from schedules.guard import editor_schedule, visible_schedule
 from users.access import can_schedule, current_group, roster_for
 
 
@@ -124,6 +124,7 @@ class MonthView(generic.View):
                 (FairJobsObjective.name, "Fair jobs"),
                 (CatchUpShareObjective.name, "Catch-up share (old)"),
             ],
+            "can_edit_schedules": can_schedule(request.user, schedule.group),
         }
         return render(request, "schedules/month_schedule.html", context)
 
@@ -147,7 +148,9 @@ class MonthListView(generic.ListView):
 
 def generate_schedule_assignments(request, id):
     if request.method == "POST":
-        schedule = visible_schedule(request, id)
+        schedule, denied = editor_schedule(request, id)
+        if denied:
+            return denied
         services = Service.objects.filter(group=schedule.group).prefetch_related(
             "tasks__users_with_preferences", "tasks__excludes"
         )
@@ -239,7 +242,9 @@ def update_schedule(request, id):
     """update assignments in database"""
     if request.method == "PUT":
         assignment_map = json.loads(request.body) or {}
-        schedule = visible_schedule(request, id)
+        schedule, denied = editor_schedule(request, id)
+        if denied:
+            return denied
         print(f"update schedule: {assignment_map}")
         if not schedule:
             print("schedule not found")
@@ -281,7 +286,9 @@ def pdf(request, id):
 def clear_schedule(request, id):
     """Delete every assignment on a schedule this user can edit."""
 
-    schedule = visible_schedule(request, id)
+    schedule, denied = editor_schedule(request, id)
+    if denied:
+        return denied
     if request.method != "DELETE":
         return JsonResponse({"success": False}, status=405)
     schedule.assignments.all().delete()

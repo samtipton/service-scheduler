@@ -8,7 +8,7 @@ That template does not extend this shell, so the top nav stays out of the PDF.
 {% endcomment %}
 
 {% block title %}{{ schedule.name }}{% endblock %}
-{% block body_class %}month-grid{% endblock %}
+{% block body_class %}month-grid{% if not can_edit_schedules %} month-readonly{% endif %}{% endblock %}
 {% block content_class %} content-wide{% endblock %}
 
 {% block extra_head %}
@@ -29,6 +29,7 @@ That template does not extend this shell, so the top nav stays out of the PDF.
 
 {% block header_extra %}
     <div class="schedule-toolbar">
+        {% if can_edit_schedules %}
         <label for="objective-select" class="objective-label">Objective</label>
         <select id="objective-select">
             {% for value, label in objective_choices %}
@@ -36,10 +37,15 @@ That template does not extend this shell, so the top nav stays out of the PDF.
             {% endfor %}
         </select>
         <button id="generate-assignments" class="toolbar-primary" type="button">Generate Assignments</button>
+        {% endif %}
         <button id="download-pdf" type="button">Download PDF</button>
+        {% if can_edit_schedules %}
         <button type="button" id="send-schedule" data-compose-url="{% url 'messaging:compose' %}?schedule={{ schedule.id }}">Send schedule</button>
+        {% endif %}
         <button id="toggle-assignment-count" type="button">Toggle Assignment Counts</button>
+        {% if can_edit_schedules %}
         <button id="clear-schedule" class="toolbar-danger" type="button">Clear Assignments</button>
+        {% endif %}
         {% if schedule|can_be_deleted_by:user %}
         <form method="post" action="{% url 'schedules:delete_schedule' id=schedule.id %}">
             {% csrf_token %}

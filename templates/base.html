@@ -216,10 +216,12 @@
                         <button type="submit">{{ group.name }}</button>
                     </form>
                     {% endfor %}
+                    {% if can_create_group %}
                     <button type="button" onclick="document.getElementById('newGroupDialog').showModal()">Create a group</button>
+                    {% endif %}
                 </div>
             </details>
-            {% else %}
+            {% elif can_create_group %}
             <button type="button" class="create-group-button" onclick="document.getElementById('newGroupDialog').showModal()">Create a group</button>
             {% endif %}
             {% endif %}
@@ -279,7 +281,7 @@
         });
     </script>
     {% block extra_js %}{% endblock %}
-    {% if user.is_authenticated %}
+    {% if user.is_authenticated and can_create_group %}
     <dialog id="newGroupDialog" class="group-dialog">
         <form method="post" action="{% url 'group_create' %}">
             {% csrf_token %}

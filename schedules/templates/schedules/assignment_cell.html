@@ -1,10 +1,10 @@
 {% comment %} TODO Extract styles into a css file {% endcomment %}
-<td class="duty-cell" draggable="true" data-duty="{{assignment_key}}">
+<td class="duty-cell" {% if can_edit_schedules %}draggable="true"{% endif %} data-duty="{{assignment_key}}">
     <div style="position: relative;">
         {% if user %}
-            <input class="assignment-input keep-datalist" type="text" list="{{task.id}}" value="{{ user.inverted_name }}" placeholder="{{ user.inverted_name }}">
+            <input class="assignment-input keep-datalist" type="text" list="{{task.id}}" value="{{ user.inverted_name }}" placeholder="{{ user.inverted_name }}" {% if not can_edit_schedules %}readonly{% endif %}>
         {% else %}
-            <input class="assignment-input keep-datalist" type="text" list="{{task.id}}" value="">
+            <input class="assignment-input keep-datalist" type="text" list="{{task.id}}" value="" {% if not can_edit_schedules %}readonly{% endif %}>
         {% endif %}
         <div style="position: absolute; display: flex; right: 5px; bottom: 1px;">
         </div>

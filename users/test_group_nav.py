@@ -119,6 +119,39 @@ class GroupNavTests(TestCase):
             ).status_code,
             403,
         )
+        self.assertNotContains(page, "Create a group")
+        denied = self.client.post("/groups/create/", {"name": "Scheduler Church"})
+        self.assertEqual(denied.status_code, 403)
+        self.assertFalse(Group.objects.filter(name="Scheduler Church").exists())
+
+    def test_admin_can_change_a_role(self):
+        group = Group.objects.create(name="Home Church")
+        Membership.objects.create(user=self.user, group=group, role=Membership.ADMIN)
+        member = User.objects.create_user(
+            email="test+role-change@example.com",
+            first_name="Role",
+            last_name="Change",
+            password="role-password-1",
+        )
+        membership = Membership.objects.create(
+            user=member, group=group, role=Membership.SCHEDULER
+        )
+        page = self.client.get("/groups/")
+        self.assertContains(page, 'class="role-form"')
+        self.assertContains(page, "groups-roster-scroll")
+        self.assertNotContains(page, "onchange=")
+        response = self.client.post(
+            "/groups/role/",
+            {"membership": membership.id, "role": Membership.USER},
+        )
+        self.assertRedirects(response, "/groups/")
+        membership.refresh_from_db()
+        self.assertEqual(membership.role, Membership.USER)
+        roster = self.client.get("/groups/")
+        self.assertContains(
+            roster,
+            f'value="user" selected',
+        )
 
     def test_the_last_admin_stays(self):
         group = Group.objects.create(name="Home Church")

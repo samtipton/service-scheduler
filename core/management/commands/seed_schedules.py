@@ -4,8 +4,11 @@ import json
 from pathlib import Path
 import pytz
 
+from django.core.management.base import CommandError
+
 from core.management.seed_guard import SeedCommand
 from schedules.models import Schedule
+from users.access import sole_group
 from users.models import User
 
 
@@ -29,6 +32,11 @@ class Command(SeedCommand):
         Get min and max dates from assignments, create a schedule for each month in that range.
         """
         creator = User.objects.get(first_name="Sam", last_name="Tipton")
+        group = sole_group()
+        if group is None:
+            raise CommandError(
+                "Create one group before seeding schedules. Refusing to guess when there are zero or several."
+            )
 
         with open(json_path, "r") as f:
             assignments_data = json.load(f)
@@ -66,6 +74,7 @@ class Command(SeedCommand):
                 "name": f"{calendar.month_name[cur.month].capitalize()} {cur.year}",
                 "date": cur,
                 "user": creator,
+                "group": group,
                 "defaults": {
                     "created_at": pytz.utc.localize(cur_datetime - timedelta(days=15)),
                     "updated_at": pytz.utc.localize(cur_datetime - timedelta(days=15)),

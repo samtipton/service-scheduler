@@ -117,12 +117,21 @@ class Group(models.Model):
 
 
 class Membership(models.Model):
-    ADMIN = "admin"
+    USER = "user"
     SCHEDULER = "scheduler"
+    ADMIN = "admin"
     ROLE_CHOICES = [
-        (ADMIN, "Admin"),
+        (USER, "User"),
         (SCHEDULER, "Scheduler"),
+        (ADMIN, "Admin"),
     ]
+
+    @classmethod
+    def normalize_role(cls, value):
+        """A posted role, or User when the value is missing or unknown."""
+        if value in {cls.USER, cls.SCHEDULER, cls.ADMIN}:
+            return value
+        return cls.USER
 
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="memberships"

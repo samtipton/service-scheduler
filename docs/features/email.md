@@ -53,7 +53,7 @@ The Brevo account already exists. From address is `olsenparkannouncements@gmail.
 
 ### Data
 
-No Group exists yet (`Service.group` is still a comment; see `docs/features/accounts.md`). The real roster is `User.objects.filter(is_active=True)`. Each user already has a required unique email. When groups land, limit the query to the schedule's group. Send puts the From address in To and the roster in BCC so members do not see each other.
+The publish roster is the active members of the schedule's group. Each user already has a required unique email. Send puts the From address in To and the roster in BCC so members do not see each other.
 
 - [x] `EmailTemplate`: `name`, `subject` (one line), `body` (text), `created_by` → User, `created_at`, `updated_at`.
 - [x] `SentEmail`: `schedule` → Schedule, `template` → EmailTemplate (null if the template is deleted), rendered `subject` and `body` stored as sent, `sent_at`, `sent_by` → User, `recipients` text snapshot of the BCC addresses.

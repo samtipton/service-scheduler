@@ -15,7 +15,7 @@ from messaging.services.send import (
 )
 from schedules.guard import visible_schedule
 from schedules.models import Schedule
-from users.access import current_group, visible_groups
+from users.access import can_schedule, current_group, visible_groups
 
 
 def _page(section):
@@ -128,6 +128,8 @@ def reminders(request):
 @require_POST
 def preview(request):
     schedule = visible_schedule(request, request.POST.get("schedule"))
+    if not can_schedule(request.user, schedule.group_id):
+        return JsonResponse({"error": "You cannot send this schedule."}, status=403)
     template = get_object_or_404(EmailTemplate, pk=request.POST.get("template"))
     subject, body = rendered_message(schedule, template)
     return JsonResponse(
@@ -160,6 +162,8 @@ def _send_result(request, schedule, template, sent=None, message="", test_email=
 @require_POST
 def send(request):
     schedule = visible_schedule(request, request.POST.get("schedule"))
+    if not can_schedule(request.user, schedule.group_id):
+        return JsonResponse({"error": "You cannot send this schedule."}, status=403)
     template = get_object_or_404(EmailTemplate, pk=request.POST.get("template"))
     try:
         sent = send_schedule_email(schedule, template, request.user)
@@ -171,6 +175,8 @@ def send(request):
 @require_POST
 def send_test(request):
     schedule = visible_schedule(request, request.POST.get("schedule"))
+    if not can_schedule(request.user, schedule.group_id):
+        return JsonResponse({"error": "You cannot send this schedule."}, status=403)
     template = get_object_or_404(EmailTemplate, pk=request.POST.get("template"))
     raw = request.POST.get("test_email", "")
     try:

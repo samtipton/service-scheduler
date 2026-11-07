@@ -1,5 +1,4 @@
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError
 
 from users.models import Group, Membership
 
@@ -7,22 +6,13 @@ from users.models import Group, Membership
 def sole_group():
     """The only congregation, when the database has exactly one.
 
-    A save that forgot to set a group uses this. Zero groups, or more than
-    one, returns None so the caller has to choose. This does not create a group.
+    Seed commands use this when they have to attach rows to that congregation.
+    Zero groups, or more than one, returns None. This does not create a group.
     """
     groups = list(Group.objects.order_by("id")[:2])
     if len(groups) != 1:
         return None
     return groups[0]
-
-
-def require_group():
-    group = sole_group()
-    if group is None:
-        raise ValidationError(
-            "Set a group. Create a group and add the user to it first."
-        )
-    return group
 
 
 SESSION_GROUP = "group_id"
@@ -69,17 +59,52 @@ def _group_id(group):
     return group.pk if hasattr(group, "pk") else group
 
 
-def can_schedule(user, group):
+def _has_role(user, group, roles):
+    """Membership decides. Staff and superuser use Django admin, not this check."""
     group_id = _group_id(group)
     if group_id is None or not getattr(user, "is_authenticated", False):
         return False
-    if user.is_staff or user.is_superuser:
-        return True
     return Membership.objects.filter(
         user=user,
         group_id=group_id,
-        role__in=[Membership.ADMIN, Membership.SCHEDULER],
+        role__in=roles,
     ).exists()
+
+
+def can_view(user, group):
+    """Open this group's schedules. A read-only member is included."""
+    return _has_role(
+        user,
+        group,
+        [Membership.USER, Membership.SCHEDULER, Membership.ADMIN],
+    )
+
+
+def can_schedule(user, group):
+    """Create or change this group's schedules. A read-only member is not."""
+    return _has_role(
+        user,
+        group,
+        [Membership.SCHEDULER, Membership.ADMIN],
+    )
+
+
+def can_create_group(user):
+    """An admin can open another congregation. A scheduler cannot.
+
+    Someone with no membership yet still can. That is how the first group
+    gets its admin. Staff can too.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if user.is_staff or user.is_superuser:
+        return True
+    roles = set(
+        Membership.objects.filter(user=user).values_list("role", flat=True)
+    )
+    if not roles:
+        return True
+    return Membership.ADMIN in roles
 
 
 def can_admin(user, group):

@@ -242,9 +242,10 @@ class GridCsrfTests(TestCase):
             last_name="User",
             password="csrf-password-1",
         )
-        service = Service.objects.create(name="Wednesday", day_of_week=3, start_time="19:00")
+        service = Service.objects.create(group=Group.objects.get(), name="Wednesday", day_of_week=3, start_time="19:00")
         Task.objects.create(id="csrf_lesson", name="Lesson", service=service, order=1)
         schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="Dec 2026", date=date(2026, 12, 1), user=user
         )
         Membership.objects.create(

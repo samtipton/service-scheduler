@@ -16,12 +16,13 @@ from schedules.models import (
     TaskPreference,
     Assignment,
 )
-from users.models import Membership, User
+from users.models import Group, Membership, User
 
 
 class ServiceTestCase(TestCase):
     def setUp(self):
         self.service = Service.objects.create(
+            group=Group.objects.get(),
             name="Test Service", day_of_week=0, start_time=time(9, 0)
         )
 
@@ -31,6 +32,7 @@ class ServiceTestCase(TestCase):
     def test_min_value_validator(self):
         with self.assertRaises(ValidationError):
             service = Service.objects.create(
+                group=Group.objects.get(),
                 name="Test Service", day_of_week=-1, start_time=time(9, 0)
             )
             service.full_clean()
@@ -38,6 +40,7 @@ class ServiceTestCase(TestCase):
     def test_max_value_validator(self):
         with self.assertRaises(ValidationError):
             service = Service.objects.create(
+                group=Group.objects.get(),
                 name="Test Service", day_of_week=7, start_time=time(9, 0)
             )
             service.full_clean()
@@ -46,6 +49,7 @@ class ServiceTestCase(TestCase):
 class TaskTestCase(TestCase):
     def setUp(self):
         self.service = Service.objects.create(
+            group=Group.objects.get(),
             name="Test Service", day_of_week=0, start_time=time(9, 0)
         )
 
@@ -117,6 +121,7 @@ class TaskTestCase(TestCase):
 class AssignmentTestCase(TestCase):
     def setUp(self):
         self.service = Service.objects.create(
+            group=Group.objects.get(),
             name="Test Service", day_of_week=0, start_time=time(9, 0)
         )
 
@@ -187,6 +192,7 @@ class TaskPreferenceTestCase(TestCase):
             password="testpassword",
         )
         self.service = Service.objects.create(
+            group=Group.objects.get(),
             name="Test Service", day_of_week=0, start_time=time(9, 0)
         )
         self.task = Task.objects.create(
@@ -252,6 +258,7 @@ class UserEligibleTasksTestCase(TestCase):
             password="testpassword",
         )
         self.service = Service.objects.create(
+            group=Group.objects.get(),
             name="Test Service", day_of_week=0, start_time=time(9, 0)
         )
         self.task1 = Task.objects.create(
@@ -312,6 +319,7 @@ class TaskEligibleUsersTestCase(TestCase):
             password="testpassword",
         )
         self.service = Service.objects.create(
+            group=Group.objects.get(),
             name="Test Service", day_of_week=0, start_time=time(9, 0)
         )
         self.task = Task.objects.create(
@@ -365,6 +373,7 @@ class AssignmentStatsTestCase(TestCase):
             password="testpassword",
         )
         self.service = Service.objects.create(
+            group=Group.objects.get(),
             name="Test Service", day_of_week=0, start_time=time(9, 0)
         )
         self.task = Task.objects.create(
@@ -599,6 +608,7 @@ class ScheduleTestCase(TestCase):
             password="testpassword",
         )
         self.service = Service.objects.create(
+            group=Group.objects.get(),
             name="Test Service", day_of_week=0, start_time=time(9, 0)
         )
         self.task = Task.objects.create(
@@ -613,6 +623,7 @@ class ScheduleTestCase(TestCase):
         TaskPreference.objects.create(user=self.user2, task=self.task, value=1.0)
 
         self.may_schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="May 2023 Schedule",
             date=datetime.date(2023, 5, 1),
             user=self.user1,
@@ -637,6 +648,7 @@ class ScheduleTestCase(TestCase):
 
     def test_schedule_creation(self):
         schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="June 2023 Schedule",
             date=datetime.date(2023, 6, 1),
             description="Test description",
@@ -649,6 +661,7 @@ class ScheduleTestCase(TestCase):
 
     def test_create_assignment(self):
         schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="Test Schedule", date=datetime.date(2023, 6, 1), user=self.user1
         )
 
@@ -674,6 +687,7 @@ class ScheduleTestCase(TestCase):
 
     def test_string_representation(self):
         schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="Test Schedule", date=datetime.date(2023, 6, 1), user=self.user1
         )
         self.assertEqual(str(schedule), "Test Schedule - June 2023")
@@ -688,6 +702,7 @@ class DeleteScheduleViewTests(TestCase):
             password="x",
         )
         self.schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="Throwaway",
             date=datetime.date(2025, 5, 1),
             user=self.user,
@@ -722,7 +737,7 @@ class DeleteScheduleViewTests(TestCase):
         list_page = self.client.get("/schedules/")
         self.assertNotContains(list_page, ">Delete<")
 
-    def test_staff_can_delete_someone_elses_schedule(self):
+    def test_staff_cannot_delete_another_groups_schedule(self):
         staff = User.objects.create_user(
             email="test+staff@example.com",
             first_name="Staff",
@@ -732,17 +747,19 @@ class DeleteScheduleViewTests(TestCase):
         )
         self.client.force_login(staff)
         response = self.client.post(f"/schedules/{self.schedule.id}/delete")
-        self.assertEqual(response.status_code, 303)
-        self.assertFalse(Schedule.objects.filter(id=self.schedule.id).exists())
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Schedule.objects.filter(id=self.schedule.id).exists())
 
     def test_delete_drops_only_this_schedule_assignments_keeps_stats(self):
         service = Service.objects.create(
+            group=Group.objects.get(),
             name="Sunday", day_of_week=0, start_time=datetime.time(10, 0)
         )
         task = Task.objects.create(
             id="del_song", name="Song", service=service, order=1
         )
         keep = Schedule.objects.create(
+            group=Group.objects.get(),
             name="Keep me", date=datetime.date(2025, 4, 1), user=self.user
         )
         Assignment.objects.create(
@@ -784,6 +801,7 @@ class RenameScheduleViewTests(TestCase):
             password="x",
         )
         self.schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="Throwaway",
             date=datetime.date(2025, 5, 1),
             user=self.user,
@@ -833,7 +851,7 @@ class RenameScheduleViewTests(TestCase):
         list_page = self.client.get("/schedules/")
         self.assertNotContains(list_page, ">Rename<")
 
-    def test_staff_can_rename_someone_elses_schedule(self):
+    def test_staff_cannot_rename_another_groups_schedule(self):
         staff = User.objects.create_user(
             email="test+rename-staff@example.com",
             first_name="Staff",
@@ -845,9 +863,9 @@ class RenameScheduleViewTests(TestCase):
         response = self.client.post(
             f"/schedules/{self.schedule.id}/rename", {"name": "Staff Name"}
         )
-        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.status_code, 404)
         self.schedule.refresh_from_db()
-        self.assertEqual(self.schedule.name, "Staff Name")
+        self.assertEqual(self.schedule.name, "Throwaway")
 
     def test_list_shows_rename_for_owner(self):
         list_page = self.client.get("/schedules/")
@@ -904,6 +922,7 @@ class ScheduleShellTests(TestCase):
             password="x",
         )
         self.schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="June Card",
             description="Second Sunday notes",
             date=datetime.date(2026, 6, 1),
@@ -913,7 +932,7 @@ class ScheduleShellTests(TestCase):
             user=self.user, group=self.schedule.group, role=Membership.SCHEDULER
         )
         for name in ("Sunday AM", "Sunday Class", "Sunday PM", "Wednesday"):
-            Service.objects.create(name=name, day_of_week=0, start_time=time(9, 0))
+            Service.objects.create(group=Group.objects.get(), name=name, day_of_week=0, start_time=time(9, 0))
         self.client.force_login(self.user)
 
     def test_schedule_list_is_cards(self):
@@ -970,12 +989,14 @@ class UpdateScheduleTests(TestCase):
             password="x",
         )
         service = Service.objects.create(
+            group=Group.objects.get(),
             name="Wednesday", day_of_week=3, start_time=datetime.time(19, 0)
         )
         self.task = Task.objects.create(
             id="wednesday_lesson", name="Lesson", service=service, order=1
         )
         self.schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="Dec 2026",
             date=datetime.date(2026, 12, 1),
             user=self.jay,

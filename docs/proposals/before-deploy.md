@@ -4,6 +4,12 @@ What has to be true before this app is on a public host. Hosting itself is `docs
 
 The code in this list is in the tree. The host is not. Render services are not created from here. What is still open is marked below: rotate or deactivate seeded logins on the production database, set the host env, and turn HSTS on only after HTTPS works.
 
+- On the production database, every seeded login gets its own password or is deactivated. Do not leave DEFAULT_USER_PASSWORD in use, and do not put that variable or MY_PASSWORD in the host environment.
+- Host settings: DEBUG=false, the real ALLOWED_HOSTS and CSRF_TRUSTED_ORIGINS, a new SECRET_KEY that does not start with django-insecure-, and the Render DATABASE_URL.
+- Turn on SECURE_HSTS_SECONDS only after HTTPS answers.
+- One superuser. Do not mark schedulers as staff. Staff does not bypass the group check in the app. Django admin can still open every row.
+- Turn on two-factor authentication for GitHub, Render, and Brevo. A stolen Render login is a copy of the database.
+
 ## Already in the tree
 
 - `/schedules/`, `/messages/`, and `/account/` redirect anonymous requests to `/login/`. `/password_reset/` and `/reset/` stay public.
@@ -16,14 +22,14 @@ The code in this list is in the tree. The host is not. Render services are not c
 
 ## Groups
 
-`docs/features/accounts.md` is the model. Its v1 left signup out of scope. This proposal does not add open signup. It does require the group boundary before the database is reachable from the internet.
+The group model is in `CONTEXT.md`. Signup stays out of scope. The unbuilt invite is `docs/features/accounts.md`. This proposal does not add open signup. It does require the group boundary before the database is reachable from the internet.
 
 The existing congregation is named Olsen Park. Service, Task, TaskPreference, Schedule, and Assignment take a group. A schedule's mail roster is the active members of that schedule's group. The backfill does not create a second group.
 
 - [x] Approve the schema in `docs/features/accounts.md` (Group, Membership with role `admin` or `scheduler`, group on Service, Task, preference, Schedule, and Assignment). Write it into README Models, then one migration. Applied locally: `users.0002_group_and_membership`, `schedules.0007_group_scope`. `schedules/fixtures/compare/live.sql` predates `group_id`. Regenerate it with `dump_compare_db` before `compare_objectives --dump`. The default tests do not load it.
 - [x] Backfill existing rows into the Olsen Park group. The migration also adds a membership there for each user that already exists at migrate time (admin when staff or superuser, otherwise scheduler). It does not create a group named Sandbox. `users.0003` removes the group slug.
 - [x] Month list, month grid, solver history, and publish email read only that schedule's group.
-- [x] A user who is not a member of the production group gets no production schedule, no production assignment, and no production address on a send. Staff and superuser can still open a grid.
+- [x] A user who is not a member of the production group gets no production schedule, no production assignment, and no production address on a send. Staff and superuser follow that same rule in the app.
 - [x] Tests: a sandbox schedule cannot see production assignments, and a production send cannot include a sandbox address. Tag test users `test+…@`.
 
 ## Account creation

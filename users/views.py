@@ -38,9 +38,7 @@ def member_create(request):
     email = (request.POST.get("email") or "").strip()
     first_name = (request.POST.get("first_name") or "").strip()
     last_name = (request.POST.get("last_name") or "").strip()
-    role = request.POST.get("role") or Membership.SCHEDULER
-    if role not in (Membership.ADMIN, Membership.SCHEDULER):
-        role = Membership.SCHEDULER
+    role = Membership.normalize_role(request.POST.get("role"))
     if not email or not first_name or not last_name:
         return redirect("members")
 

@@ -70,6 +70,7 @@ class SchedulerFixtureMixin:
     def _sunday_world(self, task_id="song_leader"):
         self.creator = self._user("creator", "Test", "Creator")
         self.service = Service.objects.create(
+            group=Group.objects.get(),
             name="Sunday AM", day_of_week=0, start_time=time(10, 0)
         )
         self.task = Task.objects.create(
@@ -79,6 +80,7 @@ class SchedulerFixtureMixin:
 
     def _schedule(self, year, month):
         return Schedule.objects.create(
+            group=Group.objects.get(),
             name=f"test-{year}-{month}",
             date=date(year, month, 1),
             user=self.creator,
@@ -104,12 +106,15 @@ class DateTaskCalendarTests(SchedulerFixtureMixin, TestCase):
     def setUp(self):
         self.creator = self._user("creator", "Test", "Creator")
         self.sun = Service.objects.create(
+            group=Group.objects.get(),
             name="Sunday", day_of_week=0, start_time=time(9, 0)
         )
         self.wed = Service.objects.create(
+            group=Group.objects.get(),
             name="Wednesday", day_of_week=3, start_time=time(19, 0)
         )
         self.weekly = Service.objects.create(
+            group=Group.objects.get(),
             name="Weekly", day_of_week=None, start_time=time(0, 0)
         )
         self.t1 = Task.objects.create(
@@ -250,9 +255,11 @@ class RealSolveTests(SchedulerFixtureMixin, TestCase):
         """Prefer Alice for both; she must not hold Sunday + weekly that week."""
         self.creator = self._user("creator", "Test", "Creator")
         sun = Service.objects.create(
+            group=Group.objects.get(),
             name="Sunday", day_of_week=0, start_time=time(9, 0)
         )
         weekly = Service.objects.create(
+            group=Group.objects.get(),
             name="Weekly", day_of_week=None, start_time=time(0, 0)
         )
         prayer = Task.objects.create(
@@ -453,9 +460,11 @@ class RotationGroupTests(SchedulerFixtureMixin, TestCase):
     def _family(self, group="song"):
         self.creator = self._user("creator", "Test", "Creator")
         self.sun = Service.objects.create(
+            group=Group.objects.get(),
             name="Sunday", day_of_week=0, start_time=time(9, 0)
         )
         self.wed = Service.objects.create(
+            group=Group.objects.get(),
             name="Wednesday", day_of_week=3, start_time=time(19, 0)
         )
         self.sun_task = Task.objects.create(
@@ -621,6 +630,7 @@ class RotationGroupTests(SchedulerFixtureMixin, TestCase):
     def test_known_ids_get_family_labels(self):
         self.creator = self._user("creator", "Test", "Creator")
         service = Service.objects.create(
+            group=Group.objects.get(),
             name="Sunday", day_of_week=0, start_time=time(9, 0)
         )
         for ids in ROTATION_FAMILIES.values():
@@ -642,6 +652,7 @@ class TaskRequiresTests(SchedulerFixtureMixin, TestCase):
     def _world(self):
         self.creator = self._user("creator", "Test", "Creator")
         self.sun = Service.objects.create(
+            group=Group.objects.get(),
             name="Sunday", day_of_week=0, start_time=time(9, 0)
         )
         self.security = Task.objects.create(
@@ -765,6 +776,7 @@ class TaskRequiresTests(SchedulerFixtureMixin, TestCase):
     def test_requires_outside_this_service_list_is_left_out(self):
         self._world()
         wednesday = Service.objects.create(
+            group=Group.objects.get(),
             name="Wednesday", day_of_week=3, start_time=time(19, 0)
         )
         door = Task.objects.create(

@@ -99,6 +99,7 @@ from schedules.models import Assignment, Schedule, Service, Task, TaskPreference
 from schedules.services.fairness import add_months, as_date, date_tasks_for_schedule
 from schedules.services.objectives import OBJECTIVES, get_objective
 from schedules.services.scheduler import Scheduler
+from users.access import sole_group
 from users.models import User
 
 MONTHS = 12
@@ -109,6 +110,14 @@ DISPLAY_NAMES = {
     "FairJobsObjective": "Fair jobs",
     "CatchUpShareObjective": "Catch-up share",
 }
+
+
+def _only_group():
+    """The comparison database has one congregation. Callers pass it explicitly."""
+    group = sole_group()
+    if group is None:
+        raise ValueError("This comparison needs exactly one group in the database.")
+    return group
 
 
 def parse_datetask_date(value: str) -> date:
@@ -124,6 +133,7 @@ def generate_months(
     on_month(done, total) is called after each month if given.
     """
     objective = get_objective(objective) if isinstance(objective, str) else objective
+    group = _only_group()
     schedules = []
     infeasible = 0
     for i in range(n):
@@ -132,6 +142,7 @@ def generate_months(
             name=f"{name_prefix}-{month_date.year}-{month_date.month:02d}",
             date=month_date,
             user=creator,
+            group=group,
         )
         services = list(
             Service.objects.prefetch_related("tasks", "tasks__excludes").all()
@@ -406,8 +417,9 @@ def load_compare_world(start: date | None = None) -> CompareWorld:
     """Tiny Sunday roster used by the command and the test. Not production people."""
     start = start or START
     creator = _user("year-creator", "Year", "Creator", joined=JOINED)
+    group = _only_group()
     service = Service.objects.create(
-        name="Sunday AM", day_of_week=0, start_time=time(10, 0)
+        name="Sunday AM", day_of_week=0, start_time=time(10, 0), group=group
     )
     song = Task.objects.create(
         id="yc_song", name="Song Leader", service=service, order=1
@@ -438,6 +450,7 @@ def load_compare_world(start: date | None = None) -> CompareWorld:
         name=f"history-{hist_month.year}-{hist_month.month:02d}",
         date=hist_month,
         user=creator,
+        group=group,
     )
     Assignment.objects.create(
         schedule=history,

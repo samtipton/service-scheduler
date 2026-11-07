@@ -5,7 +5,7 @@
 {% block title %}Schedules{% endblock %}
 
 {% block title_actions %}
-{% if current_group %}
+{% if current_group and can_edit_schedules %}
 <button type="button" class="create-schedule" onclick="document.getElementById('newScheduleDialog').showModal()">Create New Schedule</button>
 {% endif %}
 {% endblock %}
@@ -56,7 +56,7 @@
 {% endif %}
 </div>
 
-{% if current_group %}
+{% if current_group and can_edit_schedules %}
 <dialog id="newScheduleDialog">
     <h2>Create New Schedule</h2>
     <form method="POST" action="{% url 'schedules:create_schedule' %}">

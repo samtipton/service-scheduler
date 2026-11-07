@@ -15,7 +15,7 @@ from schedules.services.year_compare import (
     score_months,
     world_from_database,
 )
-from users.models import User
+from users.models import Group, User
 
 
 @tag("year")
@@ -62,6 +62,7 @@ class ScoreMonthsTests(TestCase):
         world = load_compare_world()
         ghost = world.p05
         schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="score-inactive",
             date=world.start,
             user=world.creator,

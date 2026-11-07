@@ -75,7 +75,7 @@ _read scripts for now to understand data format for now_
 
 ## Models
 
-Volunteer is the login `User`. A `Group` is one congregation. Membership role is `admin` or `scheduler`. The existing congregation is named Olsen Park. There is no `Person` model and no open signup.
+Volunteer is the login `User`. A `Group` is one congregation. Membership role is `user`, `scheduler`, or `admin`. The existing congregation is named Olsen Park. There is no `Person` model and no open signup.
 
 ```mermaid
 erDiagram
@@ -111,7 +111,7 @@ erDiagram
         name string
     }
     Membership {
-        role string "admin or scheduler"
+        role string "user, scheduler, or admin"
     }
     Service {
         name string
@@ -146,7 +146,7 @@ erDiagram
 ```
 
 - **Group** — one congregation. Other rows store its numeric `id`. The existing congregation is named Olsen Park. There is no slug.
-- **Membership** — one user in one group, role `admin` or `scheduler`. A user can belong to more than one group. No membership, and not staff, means that group's grid and mail stay hidden. Staff and superuser can still open a grid.
+- **Membership** — one user in one group, role `user` (read only), `scheduler`, or `admin`. A user can belong to more than one group. No membership means that group's grid and mail stay hidden, including for staff and superuser. Django admin can still open those rows. A scheduler cannot create a group. An admin can.
 - **Service** — recurring event. `day_of_week` 0=Sunday; `null` = week-level. `group` is required.
 - **Task** — role on a service. Symmetric `excludes` (cannot hold both in the same week); each task also excludes itself on save. `rotation_group` is a shared label for adjacent-week FairJobs rotation. Blank means no family. Migrate `0005` sets `song` (first/Sunday/Wednesday song leader), `prayer` (first/Sunday/Wednesday opening and closing), `lords_supper` (table lead/aid bread and cup). `id` stays a globally unique code (`song_leader`, `lesson`). A second group's copy needs a different id.
 - **TaskPreference** — `0` ineligible, `(0,1)` below baseline, `1` baseline, `>1` want more. `group` follows the task.

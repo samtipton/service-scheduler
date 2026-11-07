@@ -99,6 +99,52 @@ class GroupIsolationTests(TestCase):
             created_by=self.prod_user,
         )
 
+    def test_staff_and_superuser_cannot_open_another_groups_schedule(self):
+        staff = User.objects.create_user(
+            email="test+staff@example.com",
+            first_name="Staff",
+            last_name="User",
+            password="staff-password-1",
+            is_staff=True,
+        )
+        superuser = User.objects.create_superuser(
+            email="test+root@example.com",
+            first_name="Root",
+            last_name="User",
+            password="root-password-1",
+        )
+        for person in (staff, superuser):
+            self.client.force_login(person)
+            self.assertEqual(
+                self.client.get(f"/schedules/{self.prod_june.id}/").status_code,
+                404,
+            )
+            self.assertEqual(
+                self.client.put(
+                    f"/schedules/{self.prod_june.id}/update",
+                    data="{}",
+                    content_type="application/json",
+                ).status_code,
+                404,
+            )
+            listing = self.client.get("/schedules/")
+            self.assertNotContains(listing, "Production June")
+            self.assertNotContains(listing, "Sandbox May")
+
+        Membership.objects.create(
+            user=staff, group=self.sandbox, role=Membership.SCHEDULER
+        )
+        self.client.force_login(staff)
+        home = self.client.get("/schedules/")
+        self.assertContains(home, "Sandbox May")
+        self.assertNotContains(home, "Production June")
+        self.assertEqual(
+            self.client.get(f"/schedules/{self.prod_june.id}/").status_code, 404
+        )
+        denied = self.client.post(f"/schedules/{self.sand_past.id}/delete")
+        self.assertEqual(denied.status_code, 403)
+        self.assertTrue(Schedule.objects.filter(id=self.sand_past.id).exists())
+
     def test_sandbox_user_cannot_open_a_production_schedule(self):
         self.client.force_login(self.sand_user)
 

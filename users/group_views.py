@@ -5,7 +5,13 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from users.access import SESSION_GROUP, can_admin, current_group, visible_groups
+from users.access import (
+    SESSION_GROUP,
+    can_admin,
+    can_create_group,
+    current_group,
+    visible_groups,
+)
 from users.models import Group, Membership
 
 
@@ -53,6 +59,8 @@ def group_select(request):
 @login_required
 @require_POST
 def group_create(request):
+    if not can_create_group(request.user):
+        return HttpResponseForbidden("You cannot create a group.")
     name = (request.POST.get("name") or "").strip()
     if not name:
         return _back(request)
@@ -78,9 +86,7 @@ def group_add(request):
     if group is None:
         return HttpResponseForbidden("You cannot add people to this group.")
     email = (request.POST.get("email") or "").strip()
-    role = request.POST.get("role") or Membership.SCHEDULER
-    if role not in (Membership.ADMIN, Membership.SCHEDULER):
-        role = Membership.SCHEDULER
+    role = Membership.normalize_role(request.POST.get("role"))
     user = get_user_model().objects.filter(email__iexact=email).first()
     if user is None:
         return render(
@@ -105,7 +111,7 @@ def group_role(request):
         return HttpResponseForbidden("You cannot change roles in this group.")
     membership = get_object_or_404(Membership, pk=request.POST.get("membership"), group=group)
     role = request.POST.get("role")
-    if role not in (Membership.ADMIN, Membership.SCHEDULER):
+    if role not in (Membership.USER, Membership.SCHEDULER, Membership.ADMIN):
         return redirect("group_roster")
     if membership.role == Membership.ADMIN and role != Membership.ADMIN:
         admins = Membership.objects.filter(group=group, role=Membership.ADMIN).count()

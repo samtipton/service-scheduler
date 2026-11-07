@@ -4,7 +4,7 @@ Django app that assigns congregation men to recurring worship tasks with integer
 
 **Stack:** Django 5.1 · PostgreSQL · PuLP/CBC · vanilla JS · pdfkit
 
-Volunteers are login `User`s. A `Group` is one congregation. Membership is `admin` or `scheduler`. The Sunday grid's group is named Olsen Park. Publish email is shipped (`messaging`, `docs/features/email.md`). Charts, reminders, and TaskCycle are planned: `docs/features/`. There is no `Person` model. `Task.id` stays a globally unique code.
+Volunteers are login `User`s. A `Group` is one congregation. Membership is `user`, `scheduler`, or `admin`. The Sunday grid's group is named Olsen Park. Publish email is shipped (`messaging`, `docs/features/email.md`). Charts, reminders, and TaskCycle are planned: `docs/features/`. There is no `Person` model. `Task.id` stays a globally unique code.
 
 ## Domain
 
@@ -86,12 +86,33 @@ Do not re-decide these. Detail is in `docs/features/email.md`.
 
 - App package is `messaging`, routes `/messages/`. Not `core`, not `schedules`, and not a package named `messages` (`django.contrib.messages` owns that label).
 - Brevo transactional HTTP API. `BREVO_API_KEY` in `.env` (gitignored). From `olsenparkannouncements@gmail.com`, sender name Olsen Park. No Brevo contacts. No SMTP key. Key permissions: Transactional email = All, Transactional SMS = Read/write. Every other resource None.
-- Send mails every active user. To is `olsenparkannouncements@gmail.com`. The roster is BCC, split so an attached message stays at or under 99 recipients. When groups exist, that roster is the active members of the schedule's group. Send test email still mails one typed address and no one else.
+- Send mails the active members of the schedule's group. To is `olsenparkannouncements@gmail.com`. The roster is BCC, split so an attached message stays at or under 99 recipients. Send test email still mails one typed address and no one else.
 - `TIME_ZONE` stays `UTC`. Assignment datetimes are midnight UTC; changing `TIME_ZONE` moves those days. Sent mail displays in `America/Chicago`.
 - `EmailTemplate` and `SentEmail` are already migrated (`messaging.0001_email_template_and_sent_email`).
-- When groups exist, a schedule’s recipient query is the active members of that schedule’s group. Until then the preview roster is active users.
+- A schedule’s recipient query is the active members of that schedule’s group.
 
 Reminders are not built. `docs/features/reminders.md` is still a sketch. `User` has no phone number yet.
+
+## Groups
+
+- Service and Schedule must be given a group. A task copies its service's group. An assignment copies its schedule's group, or else its task's. A preference copies its task's. `bulk_create` must set `group_id`.
+- `TaskRequires` has no group column. The solver keeps a row when that person is on the schedule's roster and both tasks are in the solve.
+- The solver uses active members when the group has any memberships. A group with none, which is how the test database starts, still uses every active user.
+- Deleting a group deletes its schedules, services, tasks, preferences, assignments, and sent mail for those schedules. User accounts stay.
+- A person with no membership can create the first group and becomes its admin. An admin can create another group. A scheduler cannot. Staff can. An invite for someone with no login is not built (`docs/features/accounts.md`).
+
+## Roles
+
+- **User** (`user`) — see that group's schedules, including the month grid and PDF. Read only. Still a login, and still assignable. Cannot create a group.
+- **Scheduler** (`scheduler`) — create and modify schedules: the month, cell edits, generate, clear, send, and rename or delete a schedule they created. Cannot create a group.
+- **Admin** (`admin`) — scheduler rights, plus create a group, manage that group's roster, and delete the group. This is not `is_superuser`. `/admin/` stays staff-only. Staff and superuser do not see or edit another group's schedules in the app.
+- Add-login and change-role list User, then Scheduler, then Admin. A missing or unknown role on create or add-to-group becomes user.
+- Later, a group admin does not create another admin. That happens only in the new-account flow, which is not built. Until then the dropdown may still offer Admin.
+- Later, a group admin manages that group's preferences and its other records (services, tasks, exclusions, task requirements). Today those are edited in Django admin. That does not grant `is_superuser` or another group's rows.
+
+## Passwords
+
+A dump restore is not a schema migration. `docs/features/password-migration.md`. The laptop keeps the shared default so local logins work. On the host, after restore, accounts that still match that default get `set_unusable_password()`. People who already chose a password stay. The host superuser gets a new password. Do not email the roster as part of the scrub. New logins from the Logins page already have no usable password and get one set-password mail.
 
 ## Database
 

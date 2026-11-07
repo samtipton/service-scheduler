@@ -554,10 +554,14 @@ document.addEventListener("DOMContentLoaded", (event) => {
       item.addEventListener("dragend", handleDragEnd, false);
     }
   
+    var readOnly = document.body.classList.contains("month-readonly");
+
     let items = document.querySelectorAll("td.duty-cell");
-    items.forEach(function (item) {
-      addDragAndDropEventListeners(item);
-    });
+    if (!readOnly) {
+      items.forEach(function (item) {
+        addDragAndDropEventListeners(item);
+      });
+    }
   
     function addInputListener(input) {
       input.addEventListener("input", function (e) {
@@ -617,52 +621,70 @@ document.addEventListener("DOMContentLoaded", (event) => {
     }
   
     let inputs = document.querySelectorAll("input.assignment-input");
-    inputs.forEach(function (input) {
-      setupInput(input);
-    });
-  
-    document.getElementById("download-pdf").onclick = function () {
-      goAfterSave(function () {
-        window.location.assign("pdf");
+    if (!readOnly) {
+      inputs.forEach(function (input) {
+        setupInput(input);
       });
-    };
+    }
 
-    document.getElementById("toggle-assignment-count").onclick =
-      toggleAssignmentCountVisibility;
-  
-    document.getElementById("clear-schedule").onclick = clear;
+    var downloadPdf = document.getElementById("download-pdf");
+    if (downloadPdf) {
+      downloadPdf.onclick = function () {
+        if (readOnly) {
+          window.location.assign("pdf");
+          return;
+        }
+        goAfterSave(function () {
+          window.location.assign("pdf");
+        });
+      };
+    }
 
-    document.getElementById("generate-assignments").onclick = generateAssignments;
+    var toggleCounts = document.getElementById("toggle-assignment-count");
+    if (toggleCounts) {
+      toggleCounts.onclick = toggleAssignmentCountVisibility;
+    }
 
-    document.addEventListener("click", function (event) {
-      const link = event.target.closest("a[href]");
-      const url = linkLeavesPage(link, event);
-      if (!url) {
-        return;
+    if (!readOnly) {
+      var clearButton = document.getElementById("clear-schedule");
+      if (clearButton) {
+        clearButton.onclick = clear;
       }
-      event.preventDefault();
-      goAfterSave(function () {
-        window.location.assign(url.href);
-      });
-    }, true);
-
-    document.addEventListener("submit", function (event) {
-      const form = event.target;
-      if (!(form instanceof HTMLFormElement) || form.matches("[data-compose-form]")) {
-        return;
+      var generateButton = document.getElementById("generate-assignments");
+      if (generateButton) {
+        generateButton.onclick = generateAssignments;
       }
-      event.preventDefault();
-      goAfterSave(function () {
-        form.submit();
-      });
-    }, true);
 
-    window.addEventListener("pagehide", saveOnLeave);
-    window.addEventListener("beforeunload", saveOnLeave);
-    window.addEventListener("pageshow", function () {
-      flushedOnLeave = false;
-      navigationLocked = false;
-    });
+      document.addEventListener("click", function (event) {
+        const link = event.target.closest("a[href]");
+        const url = linkLeavesPage(link, event);
+        if (!url) {
+          return;
+        }
+        event.preventDefault();
+        goAfterSave(function () {
+          window.location.assign(url.href);
+        });
+      }, true);
+
+      document.addEventListener("submit", function (event) {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement) || form.matches("[data-compose-form]")) {
+          return;
+        }
+        event.preventDefault();
+        goAfterSave(function () {
+          form.submit();
+        });
+      }, true);
+
+      window.addEventListener("pagehide", saveOnLeave);
+      window.addEventListener("beforeunload", saveOnLeave);
+      window.addEventListener("pageshow", function () {
+        flushedOnLeave = false;
+        navigationLocked = false;
+      });
+    }
 
   
     function setupInputEventListeners(input) {

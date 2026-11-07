@@ -30,14 +30,17 @@ class Schedule(models.Model):
         return f"{self.name} - {self.date.strftime('%B %Y')}"
 
     def can_be_deleted_by(self, user):
-        """Creator, staff, or an admin of this schedule's group."""
+        """Creator who can still edit, or an admin of this schedule's group.
+
+        Staff and superuser do not get this in the app. They use Django admin.
+        """
         if user is None or not user.is_authenticated:
             return False
-        if user.pk == self.user_id or user.is_staff or user.is_superuser:
-            return True
-        from users.access import can_admin
+        from users.access import can_admin, can_schedule
 
-        return can_admin(user, self.group_id)
+        if can_admin(user, self.group_id):
+            return True
+        return user.pk == self.user_id and can_schedule(user, self.group_id)
 
     def generate_assignment_stats(self):
         """Generate assignment stats for this schedule.
@@ -191,10 +194,6 @@ class Schedule(models.Model):
 
     def save(self, *args, **kwargs):
         """Update statistics before saving"""
-        if self.group_id is None:
-            from users.access import require_group
-
-            self.group = require_group()
         self.updated_at = timezone.now()
         super().save(*args, **kwargs)
 
@@ -225,13 +224,6 @@ class Service(models.Model):
         on_delete=models.CASCADE,
         related_name="services",
     )
-
-    def save(self, *args, **kwargs):
-        if self.group_id is None:
-            from users.access import require_group
-
-            self.group = require_group()
-        super().save(*args, **kwargs)
 
     class Meta:
         ordering = [
@@ -318,10 +310,6 @@ class Task(models.Model):
     def save(self, *args, **kwargs):
         if self.group_id is None and self.service_id:
             self.group_id = self.service.group_id
-        if self.group_id is None:
-            from users.access import require_group
-
-            self.group = require_group()
         super().save(*args, **kwargs)
         self.excludes.add(self)
 
@@ -365,10 +353,6 @@ class Assignment(models.Model):
             self.group_id = self.schedule.group_id
         if self.group_id is None and self.task_id:
             self.group_id = self.task.group_id
-        if self.group_id is None:
-            from users.access import require_group
-
-            self.group = require_group()
         super().save(*args, **kwargs)
 
     class Meta:
@@ -409,10 +393,6 @@ class TaskPreference(models.Model):
     def save(self, *args, **kwargs):
         if self.group_id is None and self.task_id:
             self.group_id = self.task.group_id
-        if self.group_id is None:
-            from users.access import require_group
-
-            self.group = require_group()
         super().save(*args, **kwargs)
 
     def __str__(self):

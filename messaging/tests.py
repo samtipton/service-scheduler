@@ -93,6 +93,7 @@ class SendTests(TestCase):
             is_active=False,
         )
         self.schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="October",
             date=date(2026, 10, 1),
             user=self.user,
@@ -104,7 +105,7 @@ class SendTests(TestCase):
             user=self.other, group=self.schedule.group, role=Membership.SCHEDULER
         )
         for name in ("Sunday AM", "Sunday PM", "Wednesday", "Other"):
-            Service.objects.create(name=name, day_of_week=0, start_time="09:00")
+            Service.objects.create(group=Group.objects.get(), name=name, day_of_week=0, start_time="09:00")
         self.template = EmailTemplate.objects.create(
             name="Published",
             subject="{{month}} {{year}} schedule",
@@ -357,6 +358,7 @@ class PageTests(TestCase):
     def test_sent_time_renders_in_central_time(self):
         User = get_user_model()
         schedule = Schedule.objects.create(
+            group=Group.objects.get(),
             name="October",
             date=date(2026, 10, 1),
             user=self.user,

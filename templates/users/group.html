@@ -127,10 +127,10 @@
             <td>{{ membership.user.email }}</td>
             <td>
                 {% if can_manage %}
-                <form method="post" action="{% url 'group_role' %}">
+                <form method="post" action="{% url 'group_role' %}" class="role-form">
                     {% csrf_token %}
                     <input type="hidden" name="membership" value="{{ membership.id }}">
-                    <select name="role" onchange="this.form.submit()">
+                    <select name="role">
                         {% for value, label in roles %}
                         <option value="{{ value }}" {% if membership.role == value %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
@@ -171,4 +171,90 @@
 </dialog>
 {% endif %}
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var key = "groups-roster-scroll";
+
+    function rememberScroll() {
+        try {
+            sessionStorage.setItem(key, JSON.stringify({ y: window.scrollY, t: Date.now() }));
+        } catch (error) {}
+    }
+
+    function restoreScroll() {
+        var raw;
+        try {
+            raw = sessionStorage.getItem(key);
+        } catch (error) {
+            return;
+        }
+        if (!raw) {
+            return;
+        }
+        var saved;
+        try {
+            saved = JSON.parse(raw);
+        } catch (error) {
+            sessionStorage.removeItem(key);
+            return;
+        }
+        if (!saved || typeof saved.y !== "number" || Date.now() - saved.t > 10000) {
+            sessionStorage.removeItem(key);
+            return;
+        }
+        function go() {
+            window.scrollTo(0, saved.y);
+        }
+        go();
+        requestAnimationFrame(go);
+        window.addEventListener("load", go);
+        window.addEventListener("pageshow", function () {
+            go();
+            try {
+                sessionStorage.removeItem(key);
+            } catch (error) {}
+        }, { once: true });
+    }
+
+    restoreScroll();
+
+    document.addEventListener("change", function (event) {
+        var select = event.target;
+        if (!select || select.name !== "role" || !select.form || !select.form.classList.contains("role-form")) {
+            return;
+        }
+        var form = select.form;
+        rememberScroll();
+        fetch(form.action, {
+            method: "POST",
+            body: new FormData(form),
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+        }).then(function (response) {
+            if (!response.ok) {
+                throw new Error("role");
+            }
+            return response.text();
+        }).then(function (html) {
+            var next = new DOMParser().parseFromString(html, "text/html").querySelector(".roster-wrap");
+            var current = document.querySelector(".roster-wrap");
+            if (!next || !current) {
+                throw new Error("roster");
+            }
+            var scrollY = window.scrollY;
+            current.replaceWith(next);
+            window.scrollTo(0, scrollY);
+            try {
+                sessionStorage.removeItem(key);
+            } catch (error) {}
+        }).catch(function () {
+            form.submit();
+        });
+    });
+})();
+</script>
 {% endblock %}
